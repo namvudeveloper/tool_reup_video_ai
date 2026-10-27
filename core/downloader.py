@@ -1,4 +1,5 @@
 import shutil
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -18,6 +19,7 @@ from core.logger import (
     log_success,
     log_warn,
 )
+from core.video_url import normalize_video_url
 
 
 def _is_local_file(link: str, project_root: Path) -> Path | None:
@@ -31,6 +33,27 @@ def _is_local_file(link: str, project_root: Path) -> Path | None:
     if rel.is_file():
         return rel
     return None
+
+
+def _explain_download_error(exc: Exception, cookies_browser: str) -> RuntimeError:
+    """Turn an HTML/blocked media response into an actionable UI error."""
+    detail = re.sub(r"\x1b\[[0-9;]*m", "", str(exc)).strip()
+    if "Unable to extract initial state" in detail:
+        return RuntimeError(
+            "yt-dlp hiện không đọc được dữ liệu trình phát Bilibili của video này, dù link có thể phát trong trình duyệt. "
+            "Nếu bạn có file video nguồn, hãy chọn 'Chọn File Video Trên Máy' ở Bước 1."
+        )
+    if "extracted extension ('html')" in detail or "HTTP Error 403" in detail or "HTTP Error 412" in detail:
+        hint = (
+            "Hãy mở link video trong trình duyệt và đăng nhập nếu cần, rồi chọn đúng trình duyệt "
+            "ở mục 'Cookie đăng nhập' trước khi chạy lại. "
+            "Nếu vẫn lỗi, hãy tải video về máy và dùng nút 'Chọn File Video Trên Máy'."
+            if not cookies_browser else
+            "Hãy mở link video trong trình duyệt đã chọn, kiểm tra video phát được và đăng nhập nếu cần. "
+            "Nếu vẫn lỗi, hãy tải video về máy rồi dùng nút 'Chọn File Video Trên Máy'."
+        )
+        return RuntimeError(f"Nguồn video trả về trang HTML thay vì dữ liệu video. {hint}")
+    return RuntimeError(f"Không thể tải video: {detail}")
 
 
 def download_all_videos(
@@ -53,7 +76,7 @@ def download_all_videos(
 
     total = len(links)
     for idx, raw_link in enumerate(links, start=1):
-        link = raw_link.strip()
+        link = normalize_video_url(raw_link)
         if not link:
             continue
 
@@ -120,60 +143,58 @@ def download_all_videos(
             except Exception:
                 pass
 
-        if RICH_AVAILABLE:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold cyan]{task.description}"),
-                BarColumn(bar_width=36),
-                TaskProgressColumn(),
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                TimeRemainingColumn(),
-                console=console,
-                transient=False,
-            ) as progress:
-                task_id = progress.add_task(f"Tập {idx:02d}/{total:02d}", total=100)
+        try:
+            if RICH_AVAILABLE:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold cyan]{task.description}"),
+                    BarColumn(bar_width=36),
+                    TaskProgressColumn(),
+                    DownloadColumn(),
+                    TransferSpeedColumn(),
+                    TimeRemainingColumn(),
+                    console=console,
+                    transient=False,
+                ) as progress:
+                    task_id = progress.add_task(f"Tập {idx:02d}/{total:02d}", total=100)
 
-                def _progress_hook(d: Dict[str, Any]):
-                    status = d.get("status")
-                    if status == "downloading":
-                        total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-                        downloaded_bytes = d.get("downloaded_bytes", 0)
-                        if total_bytes > 0:
-                            progress.update(
-                                task_id,
-                                total=total_bytes,
-                                completed=downloaded_bytes,
-                            )
-                    elif status == "finished":
-                        total_bytes = d.get("total_bytes") or d.get("downloaded_bytes") or 100
-                        progress.update(task_id, total=total_bytes, completed=total_bytes)
+                    def _progress_hook(d: Dict[str, Any]):
+                        status = d.get("status")
+                        if status == "downloading":
+                            total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                            downloaded_bytes = d.get("downloaded_bytes", 0)
+                            if total_bytes > 0:
+                                progress.update(task_id, total=total_bytes, completed=downloaded_bytes)
+                        elif status == "finished":
+                            total_bytes = d.get("total_bytes") or d.get("downloaded_bytes") or 100
+                            progress.update(task_id, total=total_bytes, completed=total_bytes)
 
-                ydl_opts["progress_hooks"] = [_progress_hook]
-                try:
+                    ydl_opts["progress_hooks"] = [_progress_hook]
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([link])
-                except Exception as exc:
-                    log_error(f"Không thể tải tập {idx} ({link}): {exc}")
-                    raise
-        else:
-            def _simple_hook(d: Dict[str, Any]):
-                if d.get("status") == "downloading":
-                    pct = d.get("_percent_str", "").strip()
-                    spd = d.get("_speed_str", "").strip()
-                    print(f"\r  -> Đang tải Tập {idx}/{total}: {pct} ({spd})   ", end="", flush=True)
-                elif d.get("status") == "finished":
-                    print(f"\r  -> Đang tải Tập {idx}/{total}: 100% (Đang đóng gói MP4...)")
+            else:
+                def _simple_hook(d: Dict[str, Any]):
+                    if d.get("status") == "downloading":
+                        pct = d.get("_percent_str", "").strip()
+                        spd = d.get("_speed_str", "").strip()
+                        print(f"\r  -> Đang tải Tập {idx}/{total}: {pct} ({spd})   ", end="", flush=True)
+                    elif d.get("status") == "finished":
+                        print(f"\r  -> Đang tải Tập {idx}/{total}: 100% (Đang đóng gói MP4...)")
 
-            ydl_opts["progress_hooks"] = [_simple_hook]
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([link])
+                ydl_opts["progress_hooks"] = [_simple_hook]
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([link])
+        except Exception as exc:
+            raise _explain_download_error(exc, cookies_browser) from exc
 
         # Tìm file vừa tải xong (đề phòng trường hợp đuôi khác .mp4)
         if target_mp4.is_file():
             downloaded_files.append(target_mp4)
         else:
-            matches = sorted(raw_dir.glob(f"{ep_prefix}.*"))
+            matches = sorted(
+                p for p in raw_dir.glob(f"{ep_prefix}.*")
+                if p.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov", ".flv", ".ts"}
+            )
             if matches:
                 downloaded_files.append(matches[0])
             else:

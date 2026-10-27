@@ -910,6 +910,20 @@
         </div>
 
         <div class="form-group">
+          <label>🔐 Cookie đăng nhập cho link Bilibili / YouTube (nếu video cần đăng nhập):</label>
+          <select id="cookiesBrowserSelect" class="form-input" onchange="saveSettingsToServer()">
+            <option value="">Không dùng cookie</option>
+            <option value="chrome">Chrome</option>
+            <option value="safari">Safari</option>
+            <option value="edge">Edge</option>
+            <option value="firefox">Firefox</option>
+          </select>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 5px;">
+            Chọn trình duyệt đang mở được video và đã đăng nhập. Cookie được đọc khi kiểm tra link và khi tải video.
+          </div>
+        </div>
+
+        <div class="form-group">
           <label>🔥 Cấp Độ Chống Quét Bản Quyền YouTube (Content ID Bypass):</label>
           <select id="antiCopyrightLevel" class="form-input" style="border-color: #ef4444; background: #1a1225;" onchange="saveSettingsToServer()">
             <option value="hardcore" selected>🔴 Cấp 3: HARDCORE YOUTUBE BYPASS (Cắt lệch tâm + Xoay vi mô + Hạt Film + Phá sóng Audio EQ + Tốc độ 1.04x)</option>
@@ -1017,6 +1031,18 @@
         </span>
       </div>
 
+      <div id="srtTargetLabel" style="margin: 0 0 12px; padding: 10px 14px; border: 1px solid #475569; border-radius: 10px; color: #cbd5e1; font-size: 13px;">
+        🎬 Chưa có video từ Bước 3. Hãy xuất video trước, hoặc chọn file video trên máy.
+      </div>
+      <div class="form-group" style="max-width: 390px;">
+        <label>🎙️ Mô hình nhận diện tiếng Trung:</label>
+        <select id="whisperModelSelect" class="form-input" onchange="saveSettingsToServer()">
+          <option value="base">Nhanh nhất · Base</option>
+          <option value="small" selected>Cân bằng · Small</option>
+          <option value="medium">Chính xác hơn · Medium (tải lâu)</option>
+        </select>
+      </div>
+
       <!-- Thanh công cụ Phụ đề -->
       <div class="srt-toolbar">
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1116,7 +1142,21 @@
     let currentPlan = null;
     let selectedChunkSet = new Set();
     let srtRowsData = [];
+    let srtTargetPath = "";
     let lastBatchEnd = 10;
+
+    function renderSrtTarget(data) {
+      const outputs = data.finished_outputs || [];
+      const local = (data.plan?.items || currentPlan?.items || []).find((item) => item.is_local);
+      srtTargetPath = data.active_video_for_srt || outputs.at(-1)?.path || local?.source || "";
+      const label = document.getElementById("srtTargetLabel");
+      if (srtTargetPath) {
+        const filename = srtTargetPath.split(/[\\/]/).pop();
+        label.textContent = `🎬 Video dùng để tách phụ đề và ghép thuyết minh: ${filename}`;
+      } else {
+        label.textContent = "🎬 Chưa có video từ Bước 3. Hãy xuất video trước, hoặc chọn file video trên máy.";
+      }
+    }
 
     async function fetchSystemInit() {
       try {
@@ -1128,10 +1168,14 @@
         document.getElementById("projectNameInput").value = data.project_name || "Phim_Cat_15_Phut";
         currentChunkMode = data.chunk_mode || "target_duration";
         currentTargetHours = data.target_hours || 0.25;
+        document.getElementById("cookiesBrowserSelect").value = data.settings?.cookies_from_browser || "";
+        document.getElementById("whisperModelSelect").value = data.settings?.whisper_model || "small";
         selectedChunkSet = new Set(data.selected_chunks || []);
         srtRowsData = data.srt_rows || [];
         renderSrtTable();
         renderPlan(data.plan);
+        renderSrtTarget(data);
+        if (data.srt_status_msg) document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
       } catch (e) {
         console.error(e);
       }
@@ -1299,6 +1343,8 @@
           trim_start_sec: parseFloat(document.getElementById("trimStartInput").value || "0"),
           trim_end_sec: parseFloat(document.getElementById("trimEndInput").value || "0"),
           clean_temp_after_done: document.getElementById("cleanTempCheck").checked,
+          cookies_from_browser: document.getElementById("cookiesBrowserSelect").value,
+          whisper_model: document.getElementById("whisperModelSelect").value,
           anti_copyright: {
             enabled: levelVal !== "off",
             level: levelVal === "off" ? "basic" : levelVal,
@@ -1572,21 +1618,48 @@
     }
 
     async function autoTranscribeVideo() {
-      document.getElementById("srtStatusLabel").textContent =
-        "⏳ Đang tách âm thanh & chạy AI Whisper dịch Tiếng Trung ➔ Tiếng Việt...";
-      const res = await fetch("/api/srt/auto-transcribe", { method: "POST", body: "{}" });
-      const data = await res.json();
-      if (!data.ok) {
-        alert(data.message);
-        document.getElementById("srtStatusLabel").textContent = "⚠️ " + data.message;
+      if (!srtTargetPath) {
+        alert("Chưa có video để tách phụ đề. Hãy hoàn tất Bước 3 hoặc chọn file video trên máy.");
         return;
       }
-      srtRowsData = data.srt_rows || [];
-      renderSrtTable();
-      document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+      document.getElementById("srtStatusLabel").textContent =
+        "⏳ Đang tách âm thanh & chạy AI Whisper dịch Tiếng Trung ➔ Tiếng Việt...";
+      const startedAt = Date.now();
+      const timer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = String(elapsed % 60).padStart(2, "0");
+        const label = document.getElementById("srtStatusLabel");
+        label.textContent = `${window.currentSrtPhase || "⏳ Đang xử lý phụ đề"} (${minutes}:${seconds})`;
+      }, 1000);
+      try {
+        const res = await fetch("/api/srt/auto-transcribe", { method: "POST", body: "{}" });
+        const data = await res.json();
+        if (!data.ok) {
+          alert(data.message);
+          document.getElementById("srtStatusLabel").textContent = "⚠️ " + data.message;
+          return;
+        }
+        srtRowsData = data.srt_rows || [];
+        renderSrtTable();
+        document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+      } catch (error) {
+        document.getElementById("srtStatusLabel").textContent = "❌ Mất kết nối khi xử lý phụ đề: " + error.message;
+      } finally {
+        clearInterval(timer);
+        window.currentSrtPhase = "";
+      }
     }
 
     async function renderTtsFromEditedSrt() {
+      if (!srtTargetPath) {
+        alert("Chưa có video để ghép thuyết minh. Hãy hoàn tất Bước 3 hoặc chọn file video trên máy.");
+        return;
+      }
+      if (!srtRowsData.some((row) => (row.vi_text || "").trim())) {
+        alert("Chưa có phụ đề Tiếng Việt. Hãy tách phụ đề hoặc mở file .SRT trước.");
+        return;
+      }
       const btn = document.getElementById("ttsRenderBtn");
       const voice = document.getElementById("ttsVoiceSelect").value;
       btn.disabled = true;
@@ -1625,12 +1698,17 @@
         .map((s) => s.trim())
         .filter(Boolean);
       if (links.length > 0) {
+        await saveSettingsToServer();
         const res = await fetch("/api/add-links", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ links }),
         });
         const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          alert(data.message || "Không đọc được link video. Hãy kiểm tra link hoặc chọn file trên máy.");
+          return;
+        }
         if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
         if (data.plan) renderPlan(data.plan);
       }
@@ -1662,6 +1740,10 @@
       try {
         const res = await fetch("/api/status");
         const st = await res.json();
+        renderSrtTarget(st);
+        if (st.srt_status_msg && st.srt_status_msg.includes("Đang ")) {
+          window.currentSrtPhase = st.srt_status_msg;
+        }
 
         document.getElementById("statusPhaseText").textContent = `Trạng thái: ${st.status_phase}`;
         document.getElementById("elapsedTimeText").textContent = `⏱ ${st.elapsed_hms}`;

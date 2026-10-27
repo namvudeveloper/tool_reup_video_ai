@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.processor import probe_media_info
+from core.video_url import normalize_video_url
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".ts", ".m4v"}
 
@@ -40,11 +41,12 @@ def format_human_duration(seconds: float) -> str:
     return f"{secs} giây"
 
 
-def probe_item_metadata(ffprobe_path: str, path_or_url: str) -> Dict[str, Any]:
+def probe_item_metadata(ffprobe_path: str, path_or_url: str, cookies_browser: str = "") -> Dict[str, Any]:
     """
     Đọc nhanh thông tin thời lượng và dung lượng của 1 file video (hoặc link Bilibili/YouTube online).
     Nếu là link Bilibili dài 36 tiếng hoặc playlist nhiều tập, tự động lấy thời lượng thực tế qua yt-dlp.
     """
+    path_or_url = normalize_video_url(path_or_url)
     p = Path(path_or_url)
     if p.is_file():
         dur, has_audio = probe_media_info(ffprobe_path, p)
@@ -61,7 +63,7 @@ def probe_item_metadata(ffprobe_path: str, path_or_url: str) -> Dict[str, Any]:
         }
     else:
         title = path_or_url.split("/")[-1][:48] or path_or_url
-        dur = 900.0
+        dur = 0.0
         try:
             import yt_dlp
 
@@ -71,6 +73,8 @@ def probe_item_metadata(ffprobe_path: str, path_or_url: str) -> Dict[str, Any]:
                 "skip_download": True,
                 "extract_flat": "in_playlist",
             }
+            if cookies_browser:
+                ydl_opts["cookiesfrombrowser"] = (cookies_browser,)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(path_or_url, download=False)
                 if info:
@@ -79,11 +83,26 @@ def probe_item_metadata(ffprobe_path: str, path_or_url: str) -> Dict[str, Any]:
                         dur = float(info["duration"])
                     elif info.get("entries"):
                         entries = list(info["entries"])
-                        total_d = sum(float(e.get("duration") or 900.0) for e in entries if e)
+                        total_d = sum(float(e.get("duration") or 0.0) for e in entries if e)
                         if total_d > 0:
                             dur = total_d
-        except Exception:
-            pass
+        except Exception as exc:
+            detail = re.sub(r"\x1b\[[0-9;]*m", "", str(exc)).strip()
+            if "Unable to extract initial state" in detail:
+                raise RuntimeError(
+                    "yt-dlp hiện không đọc được dữ liệu trình phát Bilibili của video này, dù link có thể phát "
+                    "trong trình duyệt. Nếu bạn có file video nguồn, hãy chọn 'Chọn File Video Trên Máy' ở Bước 1."
+                ) from exc
+            raise RuntimeError(
+                f"Không đọc được video từ link: {path_or_url}. "
+                "Hãy kiểm tra link hoặc dùng file video trên máy. "
+                f"Chi tiết: {detail}"
+            ) from exc
+        if dur <= 0:
+            raise RuntimeError(
+                f"Không xác định được thời lượng video từ link: {path_or_url}. "
+                "Hãy kiểm tra link hoặc dùng file video trên máy."
+            )
 
         return {
             "id": f"url::{path_or_url}",
@@ -97,12 +116,12 @@ def probe_item_metadata(ffprobe_path: str, path_or_url: str) -> Dict[str, Any]:
         }
 
 
-def probe_multiple_items(ffprobe_path: str, sources: List[str]) -> List[Dict[str, Any]]:
+def probe_multiple_items(ffprobe_path: str, sources: List[str], cookies_browser: str = "") -> List[Dict[str, Any]]:
     """Đo thời lượng song song nhiều file video cùng lúc (cực nhanh kể cả khi kéo thả 50-100 tập)."""
     if not sources:
         return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda s: probe_item_metadata(ffprobe_path, s), sources))
+        results = list(pool.map(lambda s: probe_item_metadata(ffprobe_path, s, cookies_browser), sources))
     return results
 
 

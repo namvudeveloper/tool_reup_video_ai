@@ -25,8 +25,9 @@ import sys
 import tempfile
 import time
 import wave
+import wave
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 try:
     import srt
@@ -219,8 +220,17 @@ def transcribe_chinese(
     )
 
     print("  ⏳ Đang nhận diện lời thoại tiếng Trung (language='zh', VAD filter bật)...")
+    # WAV đã được FFmpeg chuẩn hóa 16 kHz mono PCM16. Đọc trực tiếp để tránh
+    # phụ thuộc av.open(metadata_errors=...), vốn không có ở một số bản PyAV.
+    import numpy as np
+
+    with wave.open(str(in_audio), "rb") as wav:
+        if wav.getnchannels() != 1 or wav.getframerate() != 16000 or wav.getsampwidth() != 2:
+            raise RuntimeError("Audio đầu vào Whisper phải là WAV mono 16 kHz PCM16.")
+        samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
+
     segments, info = model.transcribe(
-        str(in_audio),
+        samples,
         language="zh",
         beam_size=5,
         vad_filter=True,
@@ -263,11 +273,12 @@ def translate_srt(
     output_srt_vi: str,
     batch_size: int = 15,
     sleep_sec: float = 0.2,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> str:
     """
     Bước 3: Đọc file .srt tiếng Trung bằng thư viện `srt`, dịch nội dung từ 'zh-CN'
     sang 'vi' bằng GoogleTranslator, giữ nguyên 100% mốc thời gian (Index, Start, End).
-    Có cơ chế chia batch kết hợp fallback từng dòng + retry + sleep(0.2s) chống rate-limit.
+    Dịch theo cụm và báo lỗi rõ khi dịch vụ giới hạn yêu cầu.
     """
     _require_srt()
     try:
@@ -294,43 +305,25 @@ def translate_srt(
     translator = GoogleTranslator(source="zh-CN", target="vi")
     translated_subs: List[srt.Subtitle] = []
 
-    def _translate_single_with_retry(text: str, retries: int = 3) -> str:
-        clean_text = text.strip()
-        if not clean_text:
-            return ""
-        for attempt in range(1, retries + 1):
-            try:
-                res = translator.translate(clean_text)
-                time.sleep(sleep_sec)
-                return (res or clean_text).strip()
-            except Exception as exc:
-                if attempt == retries:
-                    print(f"    [CẢNH BÁO] Không dịch được câu '{clean_text}' ({exc}) -> Giữ nguyên gốc.")
-                    return clean_text
-                time.sleep(sleep_sec * (attempt * 2))
-        return clean_text
-
     # Xử lý theo từng cụm (batch) để tăng tốc độ và giảm số lần gọi API
     for start_idx in range(0, total, batch_size):
         batch = subtitles[start_idx : start_idx + batch_size]
         batch_texts = [sub.content.replace("\n", " ").strip() for sub in batch]
 
-        translated_batch: Optional[List[str]] = None
         try:
-            # Ghép bằng ký tự phân tách dòng để dịch 1 lần cho cả batch
-            joined_payload = "\n".join(batch_texts)
-            joined_result = translator.translate(joined_payload)
+            joined_result = translator.translate("\n".join(batch_texts))
             time.sleep(sleep_sec)
-            if joined_result:
-                split_lines = [line.strip() for line in joined_result.splitlines() if line.strip()]
-                if len(split_lines) == len(batch):
-                    translated_batch = split_lines
-        except Exception:
-            translated_batch = None
-
-        # Nếu dịch gộp không khớp số dòng, tự động chuyển sang dịch từng dòng an toàn tuyệt đối
-        if translated_batch is None:
-            translated_batch = [_translate_single_with_retry(t) for t in batch_texts]
+        except Exception as exc:
+            raise RuntimeError(
+                "Dịch vụ Google đang giới hạn hoặc từ chối yêu cầu dịch. "
+                "Phụ đề tiếng Trung đã được lưu; hãy thử lại sau hoặc dùng bảng sửa phụ đề thủ công."
+            ) from exc
+        translated_batch = [line.strip() for line in (joined_result or "").splitlines() if line.strip()]
+        if len(translated_batch) != len(batch):
+            raise RuntimeError(
+                "Dịch vụ trả về số câu khác với phụ đề gốc; đã dừng để tránh lệch mốc thời gian. "
+                "Phụ đề tiếng Trung vẫn được giữ lại."
+            )
 
         for sub, vi_text in zip(batch, translated_batch):
             new_sub = srt.Subtitle(
@@ -344,6 +337,8 @@ def translate_srt(
                 f"    [{new_sub.index:03d}/{total:03d}] "
                 f"{srt.timedelta_to_srt_timestamp(new_sub.start)} | {vi_text}"
             )
+        if progress_callback:
+            progress_callback(len(translated_subs), total)
 
     out_srt.write_text(srt.compose(translated_subs), encoding="utf-8")
     print(f"  ✅ Đã lưu file phụ đề tiếng Việt hoàn chỉnh: {out_srt.name}")
@@ -447,84 +442,105 @@ def generate_tts_from_srt(
                     continue
                 seg_mp3 = temp_dir / f"seg_{idx:04d}.mp3"
                 ok = await _synthesize_edge_tts_segment(clean_line, seg_mp3, voice)
+                if not ok:
+                    raise RuntimeError(
+                        f"Không tạo được giọng đọc cho câu {idx}/{total}: {clean_line[:80]}. "
+                        "Đã dừng để tránh xuất file thuyết minh bị mất câu."
+                    )
                 print(f"    🎙️ Đã tạo voice [{idx:03d}/{total:03d}]: {clean_line[:55]}")
-                tasks_out.append((idx, sub, seg_mp3 if ok else None))
+                tasks_out.append((idx, sub, seg_mp3))
             return tasks_out
 
         rendered_items = asyncio.run(_render_all_segments())
 
-        # 2. Đưa từng đoạn âm thanh vào đúng mốc thời gian (timeline offset) trên luồng WAV chuẩn
+        # 2. Trộn từng đoạn vào đúng mốc thời gian. Ghi nối tiếp sẽ đẩy những câu
+        # dài sang sau và có thể cắt mất lời ở cuối video.
         print("  🔗 Đang đồng bộ hóa âm thanh thuyết minh khớp 100% với mốc thời gian phụ đề...")
+        import numpy as np
+
+        initial_samples = int(round(max(0.0, total_video_duration) * sample_rate))
+        timeline = np.zeros(initial_samples, dtype=np.float32)
+        for i, (idx, sub, seg_mp3) in enumerate(rendered_items):
+            if seg_mp3 is None:
+                continue
+            if not seg_mp3.is_file():
+                raise RuntimeError(f"Thiếu file giọng đọc cho câu {idx}/{total}.")
+
+            start_sec = sub.start.total_seconds()
+            end_sec = sub.end.total_seconds()
+
+            # Khoảng thời gian tối đa cho phép trước khi câu tiếp theo bắt đầu.
+            if i + 1 < len(rendered_items):
+                next_start_sec = rendered_items[i + 1][1].start.total_seconds()
+                max_slot_sec = max(0.3, next_start_sec - start_sec - 0.05)
+            else:
+                max_slot_sec = max(0.3, end_sec - start_sec)
+            if total_video_duration > 0:
+                max_slot_sec = min(max_slot_sec, max(0.0, total_video_duration - start_sec))
+            if max_slot_sec <= 0:
+                raise RuntimeError(f"Câu {idx}/{total} bắt đầu sau khi video kết thúc.")
+
+            target_start_sample = max(0, int(round(start_sec * sample_rate)))
+            tts_dur = _probe_duration(ffprobe_bin, str(seg_mp3))
+            if tts_dur <= 0:
+                raise RuntimeError(f"Không đọc được thời lượng giọng đọc câu {idx}/{total}.")
+            af_filters = []
+
+            # Tăng tốc vừa phải khi lời dài; phần dư sẽ được trộn thay vì bị cắt.
+            if tts_dur > max_slot_sec:
+                speed_ratio = min(1.75, tts_dur / max_slot_sec)
+                af_filters.append(f"atempo={speed_ratio:.3f}")
+
+            af_filters.append(f"aresample={sample_rate}")
+            seg_wav = temp_dir / f"seg_{idx:04d}.wav"
+
+            cmd_conv = [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(seg_mp3),
+                "-af",
+                ",".join(af_filters),
+                "-ac",
+                "1",
+                "-ar",
+                str(sample_rate),
+                "-acodec",
+                "pcm_s16le",
+                str(seg_wav),
+            ]
+            converted = subprocess.run(cmd_conv, capture_output=True, text=True, check=False)
+            if converted.returncode != 0 or not seg_wav.is_file():
+                raise RuntimeError(
+                    f"Không chuyển được giọng đọc câu {idx}/{total}: {converted.stderr.strip()}"
+                )
+
+            with wave.open(str(seg_wav), "rb") as seg_in:
+                frames = seg_in.readframes(seg_in.getnframes())
+            audio = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+            end_sample = target_start_sample + len(audio)
+            if total_video_duration > 0 and end_sample > initial_samples:
+                raise RuntimeError(
+                    f"Câu {idx}/{total} đọc tràn khỏi cuối video. "
+                    "Hãy rút ngắn câu này trước khi tạo thuyết minh."
+                )
+            if end_sample > len(timeline):
+                timeline = np.pad(timeline, (0, end_sample - len(timeline)))
+            if i + 1 < len(rendered_items) and end_sample > int(next_start_sec * sample_rate):
+                print(f"    ⚠️ Câu {idx}/{total} dài hơn khoảng trống; giọng đọc có thể chồng câu sau.")
+            timeline[target_start_sample:end_sample] += audio
+
+        peak = float(np.max(np.abs(timeline))) if len(timeline) else 0.0
+        if peak > 0.98:
+            timeline *= 0.98 / peak
         with wave.open(str(master_wav), "wb") as wav_out:
             wav_out.setnchannels(1)
-            wav_out.setsampwidth(2)  # 16-bit PCM (2 bytes / sample)
+            wav_out.setsampwidth(2)
             wav_out.setframerate(sample_rate)
-
-            current_sample_pos = 0
-
-            for i, (idx, sub, seg_mp3) in enumerate(rendered_items):
-                if seg_mp3 is None or not seg_mp3.is_file():
-                    continue
-
-                start_sec = sub.start.total_seconds()
-                end_sec = sub.end.total_seconds()
-
-                # Khoảng thời gian tối đa cho phép trước khi câu tiếp theo bắt đầu
-                if i + 1 < len(rendered_items):
-                    next_start_sec = rendered_items[i + 1][1].start.total_seconds()
-                    max_slot_sec = max(0.3, next_start_sec - start_sec - 0.05)
-                else:
-                    max_slot_sec = max(1.0, (end_sec - start_sec) * 1.5)
-
-                target_start_sample = int(round(start_sec * sample_rate))
-                if target_start_sample > current_sample_pos:
-                    # Chèn khoảng lặng (silence) chính xác tới thời điểm câu thoại bắt đầu
-                    silence_samples = target_start_sample - current_sample_pos
-                    wav_out.writeframes(b"\x00\x00" * silence_samples)
-                    current_sample_pos = target_start_sample
-
-                tts_dur = _probe_duration(ffprobe_bin, str(seg_mp3))
-                af_filters = []
-
-                # Nếu câu đọc tiếng Việt dài hơn khoảng thời gian giữa 2 câu, tự tăng tốc nhẹ (tối đa 1.45x)
-                if tts_dur > max_slot_sec and max_slot_sec > 0.2:
-                    speed_ratio = min(1.45, max(1.02, tts_dur / max_slot_sec))
-                    af_filters.append(f"atempo={speed_ratio:.3f}")
-
-                af_filters.append(f"aresample={sample_rate}")
-                seg_wav = temp_dir / f"seg_{idx:04d}.wav"
-
-                cmd_conv = [
-                    ffmpeg_bin,
-                    "-y",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    str(seg_mp3),
-                    "-af",
-                    ",".join(af_filters),
-                    "-ac",
-                    "1",
-                    "-ar",
-                    str(sample_rate),
-                    "-acodec",
-                    "pcm_s16le",
-                    str(seg_wav),
-                ]
-                subprocess.run(cmd_conv, check=False)
-
-                if seg_wav.is_file():
-                    with wave.open(str(seg_wav), "rb") as seg_in:
-                        frames = seg_in.readframes(seg_in.getnframes())
-                        wav_out.writeframes(frames)
-                        current_sample_pos += len(frames) // 2
-
-            # Bù thêm khoảng lặng ở cuối để khớp tổng thời lượng video gốc (nếu có truyền vào)
-            if total_video_duration > 0:
-                total_target_samples = int(round(total_video_duration * sample_rate))
-                if total_target_samples > current_sample_pos:
-                    wav_out.writeframes(b"\x00\x00" * (total_target_samples - current_sample_pos))
+            wav_out.writeframes((timeline * 32767.0).astype("<i2").tobytes())
 
         # 3. Xuất từ file WAV tổng hợp sang file đích (.mp3 hoặc .wav) kèm chuẩn hóa âm lượng loudnorm
         ext = out_audio.suffix.lower()
@@ -593,7 +609,7 @@ def mux_dubbed_video(
         "-i",
         str(Path(input_srt_vi).resolve()),
         "-filter_complex",
-        f"[0:a]volume={original_audio_volume:.2f}[bg];[1:a]volume=1.0[tts];[bg][tts]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        f"[0:a]volume={original_audio_volume:.2f}[bg];[1:a]volume=1.0[tts];[bg][tts]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]",
         "-map",
         "0:v:0",
         "-map",
