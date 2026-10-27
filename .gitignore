@@ -1,0 +1,18 @@
+# Python & Virtual Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Video Pipeline Folders
+raw/
+temp_processed/
+temp_demo_inputs/
+output/*.mp4
+output/*.mkv
+
+# OS Metadata
+.DS_Store
+Thumbs.db

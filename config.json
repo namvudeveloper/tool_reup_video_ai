@@ -1,0 +1,30 @@
+{
+  "project_name": "Tuan_Tien_Truyen_Tap_01_den_10",
+  "links": [
+    "https://www.bilibili.com/video/BV1xxxxxx1",
+    "https://www.bilibili.com/video/BV1xxxxxx2",
+    "https://www.bilibili.com/video/BV1xxxxxx3"
+  ],
+  "settings": {
+    "resolution": "1920x1080",
+    "fps": 30,
+    "video_bitrate": "8M",
+    "gpu_acceleration": "auto",
+    "trim_start_sec": 0,
+    "trim_end_sec": 0,
+    "anti_copyright": {
+      "enabled": true,
+      "zoom_factor": 1.02,
+      "brightness": 0.015,
+      "contrast": 1.03,
+      "saturation": 1.04,
+      "speed_factor": 1.0,
+      "flip_horizontal": false,
+      "pitch_shift": 1.0
+    },
+    "audio_normalize": true,
+    "clean_temp_after_done": true,
+    "cookies_from_browser": "",
+    "max_retries": 3
+  }
+}

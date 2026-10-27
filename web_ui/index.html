@@ -1,0 +1,1711 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🎬 Tool Cắt Ghép Video (15 Phút / 5 Tiếng) + Sửa Phụ Đề .SRT & Lồng Tiếng</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-hover: #26354d;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --success-hover: #059669;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #8b5cf6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 60px;
+    }
+
+    .topbar {
+      background: linear-gradient(90deg, #1e1b4b 0%, #0f172a 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      font-size: 32px;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .brand h1 {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+
+    .brand p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .sys-badges {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 9px 16px;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: all 0.15s ease;
+      color: #fff;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); }
+
+    .btn-success { background: var(--success); }
+    .btn-success:hover:not(:disabled) { background: var(--success-hover); transform: translateY(-1px); }
+
+    .btn-purple { background: var(--purple); }
+    .btn-purple:hover:not(:disabled) { background: #7c3aed; transform: translateY(-1px); }
+
+    .btn-warning { background: var(--warning); color: #0f172a; }
+    .btn-warning:hover:not(:disabled) { background: #d97706; color: #fff; }
+
+    .btn-outline {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #e2e8f0;
+    }
+    .btn-outline:hover:not(:disabled) { background: #334155; }
+
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+    .container {
+      max-width: 1320px;
+      margin: 22px auto;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 22px;
+    }
+
+    .full-width-section {
+      max-width: 1320px;
+      margin: 0 auto 24px auto;
+      padding: 0 20px;
+    }
+
+    @media (max-width: 980px) {
+      .container { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .step-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17.5px;
+      font-weight: 800;
+    }
+
+    .step-num {
+      background: var(--primary);
+      color: #fff;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .dropzone {
+      border: 3px dashed #475569;
+      background: rgba(15, 23, 42, 0.55);
+      border-radius: 16px;
+      padding: 26px 18px;
+      text-align: center;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .dropzone.dragover {
+      border-color: var(--success);
+      background: rgba(16, 185, 129, 0.12);
+      transform: scale(1.01);
+    }
+
+    .dropzone-icon {
+      font-size: 42px;
+      margin-bottom: 8px;
+    }
+
+    .dropzone h3 {
+      font-size: 19px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .dropzone p {
+      font-size: 13.5px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .picker-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .meter-box {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .meter-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .meter-stats {
+      font-size: 15.5px;
+      font-weight: 800;
+    }
+
+    .meter-stats span {
+      color: #38bdf8;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 22px;
+      background: #1e293b;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid #334155;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    }
+
+    .target-selector {
+      display: flex;
+      gap: 7px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .target-pill {
+      padding: 7px 13px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 700;
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      cursor: pointer;
+    }
+
+    .target-pill.active {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+
+    .selection-toolbar {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chunk-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      max-height: 360px;
+      overflow-y: auto;
+      padding-right: 4px;
+      margin-bottom: 16px;
+    }
+
+    .chunk-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 11px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .chunk-card.selected {
+      background: rgba(16, 185, 129, 0.13);
+      border-color: #10b981;
+    }
+
+    .chunk-card-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .chunk-checkbox {
+      width: 22px;
+      height: 22px;
+      accent-color: #10b981;
+      cursor: pointer;
+    }
+
+    .chunk-card-title {
+      font-weight: 800;
+      font-size: 14.5px;
+      color: #f8fafc;
+    }
+
+    .chunk-card-sub {
+      font-size: 12.5px;
+      color: #94a3b8;
+    }
+
+    .chunk-badge {
+      background: var(--purple);
+      color: #fff;
+      font-weight: 800;
+      font-size: 12.5px;
+      padding: 4px 11px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .ep-list {
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #0f172a;
+    }
+
+    .ep-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid #1e293b;
+      gap: 10px;
+    }
+
+    .ep-row:last-child { border-bottom: none; }
+
+    .ep-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .ep-num {
+      background: #334155;
+      color: #f8fafc;
+      font-weight: 800;
+      font-size: 11.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .ep-name {
+      font-weight: 600;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ep-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .ep-dur {
+      font-size: 12px;
+      color: #38bdf8;
+      font-weight: 700;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    .icon-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon-btn:hover { background: #334155; color: #fff; }
+
+    .form-group {
+      margin-bottom: 13px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-bottom: 5px;
+    }
+
+    .form-input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: #fff;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .toggle-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      padding: 11px 14px;
+      border-radius: 10px;
+      margin-bottom: 11px;
+    }
+
+    .start-mega-btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 17px;
+      font-weight: 900;
+      border-radius: 14px;
+      background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 10px 25px rgba(16, 185, 129, 0.35);
+      transition: all 0.2s ease;
+    }
+
+    .start-mega-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 30px rgba(16, 185, 129, 0.5);
+    }
+
+    .start-mega-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .log-box {
+      background: #090d16;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px;
+      height: 195px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #a7f3d0;
+      margin-top: 12px;
+    }
+
+    .log-line {
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    /* BẢNG SỬA PHỤ ĐỀ (.SRT) THỦ CÔNG */
+    .srt-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+
+    .find-replace-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .srt-table-wrap {
+      max-height: 440px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #090d16;
+    }
+
+    table.srt-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    table.srt-table th {
+      position: sticky;
+      top: 0;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: left;
+      padding: 11px 12px;
+      border-bottom: 1px solid #334155;
+      z-index: 10;
+    }
+
+    table.srt-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #1e293b;
+      vertical-align: middle;
+    }
+
+    .srt-ts-input {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #38bdf8;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-family: monospace;
+      width: 115px;
+      text-align: center;
+    }
+
+    .srt-vi-input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #fef08a;
+      padding: 8px 11px;
+      border-radius: 8px;
+      font-size: 14.5px;
+      font-weight: 600;
+    }
+
+    .srt-vi-input:focus {
+      outline: none;
+      border-color: #10b981;
+      background: #0f172a;
+      color: #fff;
+    }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop.active { display: flex; }
+
+    .modal-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      max-width: 600px;
+      width: 100%;
+      padding: 24px;
+    }
+
+    textarea.link-area {
+      width: 100%;
+      height: 160px;
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14px;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- THANH TRÊN CÙNG -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🎬</div>
+      <div>
+        <h1>TOOL CẮT GHÉP VIDEO (15 PHÚT / 5 TIẾNG) & SỬA PHỤ ĐỀ .SRT</h1>
+        <p>Chọn cắt 10 phần đầu 15 phút • Lách Bản Quyền Hardcore • Sửa Sub dịch sai & Lồng Tiếng Việt</p>
+      </div>
+    </div>
+
+    <div class="sys-badges">
+      <div class="badge" id="osBadge">💻 Đang kiểm tra...</div>
+      <div class="badge" id="gpuBadge">⚡ GPU: ...</div>
+      <div class="badge" id="diskBadge">💾 Ổ cứng: ...</div>
+      <button class="btn btn-primary" onclick="openOutputFolder()">
+        📂 Mở Thư Mục Lấy Video (output/)
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- CỘT TRÁI: NẠP VIDEO & CHỌN PHẦN CẮT 15 PHÚT -->
+    <div>
+      <!-- BƯỚC 1: NẠP VIDEO -->
+      <section class="card">
+        <div class="step-header">
+          <div class="step-title">
+            <span class="step-num">1</span>
+            <span>Kéo Thả Video Hoặc Dán Link Bilibili (36 Tiếng)</span>
+          </div>
+          <span style="font-size: 12.5px; color: var(--muted);">Hỗ trợ File .MP4, .MKV & Link Bilibili/YouTube</span>
+        </div>
+
+        <div
+          class="dropzone"
+          id="dropzone"
+          ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)"
+          ondrop="handleDrop(event)"
+        >
+          <div class="dropzone-icon">📥</div>
+          <h3>KÉO & THẢ VIDEO VÀO ĐÂY</h3>
+          <p>Thả video dài 36 tiếng hoặc hàng chục tập lẻ vào đây, hoặc bấm các nút bên dưới:</p>
+
+          <div class="picker-buttons">
+            <button class="btn btn-success" onclick="pickNativeFiles()">
+              📂 Chọn File Video Trên Máy
+            </button>
+            <button class="btn btn-purple" onclick="pickNativeFolder()">
+              📁 Chọn Cả Thư Mục Phim
+            </button>
+            <button class="btn btn-outline" onclick="openLinkModal()">
+              🔗 Dán Link Bilibili / YouTube
+            </button>
+          </div>
+        </div>
+
+        <div id="chunkUploadBox" style="display: none; margin-top: 12px;">
+          <div style="font-size: 13px; font-weight: 700; margin-bottom: 5px; color: #38bdf8;" id="chunkUploadLabel">
+            Đang đọc file kéo thả...
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="chunkUploadFill" style="width: 0%;"></div>
+            <div class="progress-text" id="chunkUploadPct">0%</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BƯỚC 2: CHIA PHẦN 15 PHÚT & TÍCH CHỌN 10 PHẦN ĐẦU -->
+      <section class="card">
+        <div class="step-header">
+          <div class="step-title">
+            <span class="step-num">2</span>
+            <span>Chia Nhỏ 15 Phút & Tích Chọn Phần Muốn Cắt</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="reorderAction('sort_natural')">
+              🔢 Tự Xếp Thứ Tự
+            </button>
+            <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="reorderAction('clear_all')">
+              🗑️ Xóa Danh Sách
+            </button>
+          </div>
+        </div>
+
+        <div class="meter-box">
+          <div class="meter-top">
+            <div class="meter-stats">
+              Tổng thời lượng gốc: <span id="totalDurText">00 giờ 00 phút</span>
+            </div>
+            <div style="font-size: 13.5px; font-weight: 800; color: #10b981;" id="chunkCountSummary">
+              Đang tích chọn: 0 / 0 phần
+            </div>
+          </div>
+
+          <div class="target-selector">
+            <span style="font-size: 13px; font-weight: 800; color: #f8fafc;">✂️ Độ dài mỗi phần cắt:</span>
+            <button class="target-pill active" id="pill15m" onclick="setTargetMode('target_duration', 0.25)">
+              ⚡ 15 Phút / Phần (Khuyên dùng)
+            </button>
+            <button class="target-pill" id="pill30m" onclick="setTargetMode('target_duration', 0.5)">
+              30 Phút / Phần
+            </button>
+            <button class="target-pill" id="pill1h" onclick="setTargetMode('target_duration', 1)">
+              1 Tiếng / Phần
+            </button>
+            <button class="target-pill" id="pill3h" onclick="setTargetMode('target_duration', 3)">
+              3 Tiếng / Phần
+            </button>
+            <button class="target-pill" id="pill5h" onclick="setTargetMode('target_duration', 5)">
+              5 Tiếng / Phần
+            </button>
+            <button class="target-pill" id="pillSingle" onclick="setTargetMode('single', 5)">
+              Gộp Tất Cả Thành 1 File
+            </button>
+          </div>
+        </div>
+
+        <!-- THANH CÔNG CỤ CHỌN NHANH 10 PHẦN ĐẦU / CHỌN KHOẢNG PHẦN CẮT -->
+        <div class="selection-toolbar">
+          <div style="display: flex; gap: 7px; flex-wrap: wrap;">
+            <button class="btn btn-success" style="padding: 7px 12px; font-size: 12.5px;" onclick="selectRangeChunks(1, 10)">
+              🔟 Chọn 10 Phần Đầu (Phần 1 ➔ 10)
+            </button>
+            <button class="btn btn-purple" style="padding: 7px 12px; font-size: 12.5px;" onclick="selectNext10Chunks()">
+              ⏭️ Chọn 10 Phần Tiếp Theo
+            </button>
+            <button class="btn btn-outline" style="padding: 7px 11px; font-size: 12px;" onclick="selectAllChunks(true)">
+              ☑️ Chọn Tất Cả
+            </button>
+            <button class="btn btn-outline" style="padding: 7px 11px; font-size: 12px;" onclick="selectAllChunks(false)">
+              ⬜ Bỏ Chọn Hết
+            </button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 12.5px;">
+            <span>Từ phần:</span>
+            <input type="number" id="rangeFromInput" value="1" min="1" style="width:56px; padding:5px; border-radius:6px; background:#0f172a; color:#fff; border:1px solid #475569; text-align:center;" />
+            <span>đến:</span>
+            <input type="number" id="rangeToInput" value="10" min="1" style="width:56px; padding:5px; border-radius:6px; background:#0f172a; color:#fff; border:1px solid #475569; text-align:center;" />
+            <button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;" onclick="applyCustomRange()">
+              Chọn
+            </button>
+          </div>
+        </div>
+
+        <!-- Danh sách các Phần (Chunks) có Checkbox tích chọn -->
+        <div style="font-size: 13px; font-weight: 700; color: #a7f3d0; margin-bottom: 8px;">
+          ☑️ Tích chọn những phần bạn muốn cắt ra (Mặc định đã chọn sẵn 10 phần đầu):
+        </div>
+        <div id="chunkCardsContainer" class="chunk-grid">
+          <div style="padding: 24px; text-align: center; color: var(--muted); font-size: 13.5px; border: 1px dashed #334155; border-radius: 12px;">
+            Hãy thả video hoặc dán link Bilibili vào Bước 1 để hiện danh sách các phần 15 phút tại đây!
+          </div>
+        </div>
+
+        <!-- Danh sách file gốc -->
+        <details style="margin-top: 8px;">
+          <summary style="cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted); padding: 6px 0;">
+            📋 Xem danh sách file gốc / đoạn cắt chi tiết
+          </summary>
+          <div class="ep-list" id="episodeList" style="margin-top: 8px;"></div>
+        </details>
+      </section>
+    </div>
+
+    <!-- CỘT PHẢI: CÀI ĐẶT LÁCH BẢN QUYỀN & BẤM CHẠY -->
+    <div>
+      <section class="card">
+        <div class="step-header">
+          <div class="step-title">
+            <span class="step-num">3</span>
+            <span>Cài Đặt Lách Bản Quyền & Bấm Xuất Phần Đã Chọn</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>📝 Tên bộ phim xuất ra (Sẽ tự đánh số _Phan_01, _Phan_02...):</label>
+          <input
+            type="text"
+            id="projectNameInput"
+            class="form-input"
+            value="Phim_Cat_15_Phut"
+            onchange="saveSettingsToServer()"
+          />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>✂️ Cắt bỏ đầu video gốc (Giây):</label>
+            <input
+              type="number"
+              id="trimStartInput"
+              class="form-input"
+              value="0"
+              min="0"
+              max="3600"
+              onchange="saveSettingsToServer()"
+            />
+          </div>
+
+          <div class="form-group">
+            <label>✂️ Cắt bỏ cuối video gốc (Giây):</label>
+            <input
+              type="number"
+              id="trimEndInput"
+              class="form-input"
+              value="0"
+              min="0"
+              max="3600"
+              onchange="saveSettingsToServer()"
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>🖥️ Độ nét đầu ra:</label>
+            <select id="resolutionSelect" class="form-input" onchange="saveSettingsToServer()">
+              <option value="1920x1080" selected>Full HD 1080p (Chuẩn YouTube)</option>
+              <option value="1280x720">HD 720p (Nhẹ ổ cứng & Nhanh)</option>
+              <option value="2560x1440">2K QHD (1440p)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>🎞️ Tốc độ khung hình (FPS):</label>
+            <select id="fpsSelect" class="form-input" onchange="saveSettingsToServer()">
+              <option value="30" selected>30 FPS (Mượt & Nhanh)</option>
+              <option value="60">60 FPS (Siêu mượt)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>🔥 Cấp Độ Chống Quét Bản Quyền YouTube (Content ID Bypass):</label>
+          <select id="antiCopyrightLevel" class="form-input" style="border-color: #ef4444; background: #1a1225;" onchange="saveSettingsToServer()">
+            <option value="hardcore" selected>🔴 Cấp 3: HARDCORE YOUTUBE BYPASS (Cắt lệch tâm + Xoay vi mô + Hạt Film + Phá sóng Audio EQ + Tốc độ 1.04x)</option>
+            <option value="medium">🟡 Cấp 2: Nâng Cao (Cắt lệch tâm 3.5% + Đổi màu RGB + Lọc EQ âm thanh + Tốc độ 1.03x)</option>
+            <option value="basic">🟢 Cấp 1: Cơ Bản (Zoom viền 2% + Chỉnh màu tươi + Giữ nguyên tốc độ 1.0x)</option>
+            <option value="off">⚪ Tắt Lách Bản Quyền (Chỉ cắt & chuẩn hóa 1080p)</option>
+          </select>
+        </div>
+
+        <div class="toggle-box">
+          <div>
+            <div style="font-weight: 800; font-size: 13.5px;">🪞 Lật Ngang Khung Hình (Mirror Flip - Tùy chọn thêm)</div>
+            <div style="font-size: 12px; color: var(--muted);">
+              Bật thêm nút này nếu gặp bộ phim bị quét gắt phần hình ảnh
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            id="flipHorizontalCheck"
+            style="width: 22px; height: 22px; cursor: pointer;"
+            onchange="saveSettingsToServer()"
+          />
+        </div>
+
+        <div class="toggle-box">
+          <div>
+            <div style="font-weight: 800; font-size: 13.5px;">🧹 Tự Động Dọn File Tạm Sau Khi Xuất</div>
+            <div style="font-size: 12px; color: var(--muted);">
+              Xóa file tạm ngay sau khi xuất xong từng phần 15 phút để bảo vệ ổ cứng
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            id="cleanTempCheck"
+            checked
+            style="width: 22px; height: 22px; cursor: pointer;"
+            onchange="saveSettingsToServer()"
+          />
+        </div>
+
+        <div style="margin-top: 16px; display: flex; gap: 10px;">
+          <button class="start-mega-btn" id="startBtn" onclick="startPipeline()">
+            🚀 BẮT ĐẦU CẮT & XUẤT CÁC PHẦN ĐÃ CHỌN
+          </button>
+          <button
+            class="btn btn-danger"
+            id="stopBtn"
+            style="display: none; padding: 0 22px; font-size: 16px;"
+            onclick="stopPipeline()"
+          >
+            ⏹ Dừng
+          </button>
+        </div>
+      </section>
+
+      <!-- TIẾN TRÌNH TRỰC TIẾP -->
+      <section class="card">
+        <div class="step-header">
+          <div class="step-title">
+            <span>📊 Tiến Trình Xử Lý Trực Tiếp</span>
+          </div>
+          <span style="font-size: 13px; color: #38bdf8; font-weight: 700;" id="elapsedTimeText">⏱ 00:00:00</span>
+        </div>
+
+        <div style="font-size: 13.5px; font-weight: 700; margin-bottom: 8px; color: #fde047;" id="statusPhaseText">
+          Trạng thái: Sẵn sàng
+        </div>
+
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">Tiến trình tổng thể các phần đã chọn:</div>
+        <div class="progress-track" style="margin-bottom: 10px;">
+          <div class="progress-fill" id="overallProgFill" style="width: 0%;"></div>
+          <div class="progress-text" id="overallProgText">0%</div>
+        </div>
+
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">Tiến trình phần đang xử lý:</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="epProgFill" style="width: 0%; background: linear-gradient(90deg, #8b5cf6, #ec4899);"></div>
+          <div class="progress-text" id="epProgText">0%</div>
+        </div>
+
+        <div id="finishedBox" style="display: none; margin-top: 14px;">
+          <div style="font-weight: 800; font-size: 13.5px; color: #10b981; margin-bottom: 6px;">
+            🎉 Các Phần Đã Xuất Xong (Trong thư mục output/):
+          </div>
+          <div id="finishedList" class="chunk-grid" style="max-height: 180px;"></div>
+        </div>
+
+        <div class="log-box" id="logBox">
+          <div class="log-line">✨ Sẵn sàng! Mặc định chế độ cắt 15 phút/phần và chọn sẵn 10 phần đầu tiên.</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- BƯỚC 4 (TOÀN MÀN HÌNH DƯỚI): BẢNG SỬA PHỤ ĐỀ (.SRT) THỦ CÔNG & LỒNG TIẾNG VIỆT -->
+  <section class="full-width-section">
+    <div class="card">
+      <div class="step-header">
+        <div class="step-title">
+          <span class="step-num" style="background: var(--purple);">4</span>
+          <span>Trình Sửa Phụ Đề (.SRT) Thủ Công & Tạo Thuyết Minh Tiếng Việt (TTS)</span>
+        </div>
+        <span style="font-size: 13px; color: #a7f3d0; font-weight: 700;" id="srtStatusLabel">
+          💡 Chỗ nào máy dịch sai tên nhân vật / thuật ngữ, bạn bấm vào ô Tiếng Việt sửa lại rồi bấm Lưu hoặc Tạo Thuyết Minh!
+        </span>
+      </div>
+
+      <!-- Thanh công cụ Phụ đề -->
+      <div class="srt-toolbar">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-purple" onclick="autoTranscribeVideo()">
+            🎙️ 1. Tự Động Tách & Dịch Phụ Đề Từ Video
+          </button>
+          <button class="btn btn-outline" onclick="pickSrtFileToEdit()">
+            📂 Mở File .SRT Có Sẵn Để Sửa
+          </button>
+          <button class="btn btn-outline" onclick="addSrtRow()">
+            ➕ Thêm Câu Sub Mới
+          </button>
+          <button class="btn btn-primary" onclick="saveEditedSrt()">
+            💾 2. Lưu Bản Phụ Đề (.SRT) Đã Sửa
+          </button>
+        </div>
+
+        <!-- Tìm & Thay thế nhanh từ dịch sai hàng loạt -->
+        <div class="find-replace-bar">
+          <span style="font-size: 12.5px; font-weight: 700; color: #cbd5e1;">🔍 Sửa nhanh từ sai:</span>
+          <input
+            type="text"
+            id="findWordInput"
+            placeholder="Từ bị dịch sai (VD: Hàn Đứng)"
+            style="padding: 7px 10px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 13px; width: 190px;"
+          />
+          <span>➔</span>
+          <input
+            type="text"
+            id="replaceWordInput"
+            placeholder="Từ đúng (VD: Hàn Lập)"
+            style="padding: 7px 10px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 13px; width: 170px;"
+          />
+          <button class="btn btn-warning" style="padding: 7px 12px; font-size: 12.5px;" onclick="replaceAllInSrt()">
+            ⚡ Thay Thế Tất Cả
+          </button>
+        </div>
+      </div>
+
+      <!-- Bảng sửa từng dòng phụ đề -->
+      <div class="srt-table-wrap">
+        <table class="srt-table">
+          <thead>
+            <tr>
+              <th style="width: 55px;">Câu #</th>
+              <th style="width: 260px;">Mốc Thời Gian (Bắt đầu ➔ Kết thúc)</th>
+              <th style="width: 28%;">Câu Gốc (Tiếng Trung đối chiếu)</th>
+              <th>✏️ Bản Dịch Tiếng Việt (Bấm vào ô bất kỳ để sửa trực tiếp chữ bị dịch sai)</th>
+              <th style="width: 65px; text-align: center;">Xóa</th>
+            </tr>
+          </thead>
+          <tbody id="srtTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Thanh tạo giọng đọc Thuyết minh từ bản Sub đã sửa -->
+      <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); padding: 14px 18px; border-radius: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <span style="font-weight: 800; font-size: 14.5px; color: #a7f3d0;">
+            🗣️ Bước Cuối: Đọc Thuyết Minh AI Theo Đúng Bản Sub Bạn Đã Sửa:
+          </span>
+          <select id="ttsVoiceSelect" class="form-input" style="width: 290px;">
+            <option value="vi-VN-NamMinhNeural" selected>🎙️ Giọng Nam Trầm Ấm (vi-VN-NamMinhNeural)</option>
+            <option value="vi-VN-HoaiMyNeural">🎙️ Giọng Nữ Truyền Cảm (vi-VN-HoaiMyNeural)</option>
+          </select>
+        </div>
+
+        <button class="btn btn-success" style="padding: 12px 22px; font-size: 15px;" id="ttsRenderBtn" onclick="renderTtsFromEditedSrt()">
+          🚀 3. TẠO FILE THUYẾT MINH (.MP3) & GHÉP VÀO VIDEO
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- HỘP THOẠI DÁN LINK ONLINE -->
+  <div class="modal-backdrop" id="linkModal">
+    <div class="modal-card">
+      <h3 style="font-size: 18px; font-weight: 800;">🔗 Dán Link Video Bilibili (36 Tiếng) / YouTube</h3>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 4px;">
+        Mỗi dòng 1 link. Máy sẽ tự đọc tổng thời lượng và chia thành các phần 15 phút để bạn chọn:
+      </p>
+      <textarea
+        id="linksTextarea"
+        class="link-area"
+        placeholder="https://www.bilibili.com/video/BV1...&#10;https://www.youtube.com/watch?v=..."
+      ></textarea>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn btn-outline" onclick="closeLinkModal()">Hủy</button>
+        <button class="btn btn-success" onclick="submitLinks()">✅ Thêm & Chia Phần 15 Phút</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentChunkMode = "target_duration";
+    let currentTargetHours = 0.25; // 15 phút mặc định
+    let currentPlan = null;
+    let selectedChunkSet = new Set();
+    let srtRowsData = [];
+    let lastBatchEnd = 10;
+
+    async function fetchSystemInit() {
+      try {
+        const res = await fetch("/api/system");
+        const data = await res.json();
+        document.getElementById("osBadge").textContent = `💻 Máy: ${data.os} (${data.arch})`;
+        document.getElementById("gpuBadge").textContent = `⚡ ${data.gpu_label}`;
+        document.getElementById("diskBadge").textContent = `💾 Trống: ${data.free_gb} GB`;
+        document.getElementById("projectNameInput").value = data.project_name || "Phim_Cat_15_Phut";
+        currentChunkMode = data.chunk_mode || "target_duration";
+        currentTargetHours = data.target_hours || 0.25;
+        selectedChunkSet = new Set(data.selected_chunks || []);
+        srtRowsData = data.srt_rows || [];
+        renderSrtTable();
+        renderPlan(data.plan);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderPlan(plan) {
+      if (!plan) return;
+      currentPlan = plan;
+
+      document.getElementById("totalDurText").textContent = `${plan.total_human} (${plan.total_hms})`;
+      const chunks = plan.chunks || [];
+      const selCount = chunks.filter((c) => selectedChunkSet.has(c.chunk_index)).length;
+      document.getElementById("chunkCountSummary").textContent =
+        chunks.length > 0
+          ? `✅ Đang tích chọn xuất: ${selCount} / tổng số ${chunks.length} phần`
+          : "Chưa có phần cắt nào";
+
+      const startBtn = document.getElementById("startBtn");
+      startBtn.textContent =
+        selCount > 0
+          ? `🚀 BẮT ĐẦU CẮT & XUẤT ${selCount} PHẦN ĐÃ CHỌN`
+          : `🚀 BẮT ĐẦU CẮT & XUẤT VIDEO`;
+
+      // Hiển thị các thẻ Chunk kèm Checkbox tích chọn
+      const chunkBox = document.getElementById("chunkCardsContainer");
+      if (chunks.length === 0) {
+        chunkBox.innerHTML = `
+          <div style="padding: 24px; text-align: center; color: var(--muted); font-size: 13.5px; border: 1px dashed #334155; border-radius: 12px;">
+            Hãy thả video hoặc dán link Bilibili vào Bước 1 để hiện danh sách các phần 15 phút tại đây!
+          </div>`;
+      } else {
+        chunkBox.innerHTML = chunks
+          .map((c) => {
+            const isChecked = selectedChunkSet.has(c.chunk_index);
+            const firstItemName = c.items && c.items[0] ? c.items[0].name : "";
+            return `
+          <div class="chunk-card ${isChecked ? "selected" : ""}" onclick="toggleChunkSelection(${c.chunk_index})">
+            <div class="chunk-card-left">
+              <input
+                type="checkbox"
+                class="chunk-checkbox"
+                ${isChecked ? "checked" : ""}
+                onclick="event.stopPropagation(); toggleChunkSelection(${c.chunk_index})"
+              />
+              <div>
+                <div class="chunk-card-title">
+                  📦 Phần ${c.chunk_index}: Xuất ra file <span style="color:#6ee7b7;">output/${c.output_name}</span>
+                </div>
+                <div class="chunk-card-sub">${firstItemName}</div>
+              </div>
+            </div>
+            <div class="chunk-badge">⏱ ${c.total_human} (${c.total_hms})</div>
+          </div>
+        `;
+          })
+          .join("");
+      }
+
+      // Danh sách file / đoạn chi tiết
+      const epBox = document.getElementById("episodeList");
+      if (!plan.items || plan.items.length === 0) {
+        epBox.innerHTML = `<div style="padding:18px; text-align:center; color:var(--muted);">Chưa có dữ liệu</div>`;
+      } else {
+        epBox.innerHTML = plan.items
+          .map(
+            (it, idx) => `
+          <div class="ep-row">
+            <div class="ep-left">
+              <span class="ep-num">#${idx + 1}</span>
+              <span class="ep-name" title="${it.source}">${it.name}</span>
+            </div>
+            <div class="ep-meta">
+              <span class="ep-dur">⏱ ${it.effective_hms}</span>
+              <button class="icon-btn" title="Xóa" onclick="reorderAction('remove', ${idx})">🗑️</button>
+            </div>
+          </div>
+        `
+          )
+          .join("");
+      }
+    }
+
+    async function toggleChunkSelection(chunkIndex) {
+      if (selectedChunkSet.has(chunkIndex)) {
+        selectedChunkSet.delete(chunkIndex);
+      } else {
+        selectedChunkSet.add(chunkIndex);
+      }
+      renderPlan(currentPlan);
+      await saveSettingsToServer();
+    }
+
+    async function selectRangeChunks(fromIdx, toIdx) {
+      if (!currentPlan || !currentPlan.chunks) return;
+      selectedChunkSet.clear();
+      for (const c of currentPlan.chunks) {
+        if (c.chunk_index >= fromIdx && c.chunk_index <= toIdx) {
+          selectedChunkSet.add(c.chunk_index);
+        }
+      }
+      lastBatchEnd = toIdx;
+      document.getElementById("rangeFromInput").value = fromIdx;
+      document.getElementById("rangeToInput").value = toIdx;
+      renderPlan(currentPlan);
+      await saveSettingsToServer();
+    }
+
+    async function selectNext10Chunks() {
+      if (!currentPlan || !currentPlan.chunks) return;
+      const total = currentPlan.chunks.length;
+      let start = lastBatchEnd + 1;
+      if (start > total) start = 1;
+      const end = Math.min(total, start + 9);
+      await selectRangeChunks(start, end);
+    }
+
+    async function applyCustomRange() {
+      const f = parseInt(document.getElementById("rangeFromInput").value || "1", 10);
+      const t = parseInt(document.getElementById("rangeToInput").value || "10", 10);
+      await selectRangeChunks(Math.min(f, t), Math.max(f, t));
+    }
+
+    async function selectAllChunks(selectAll) {
+      if (!currentPlan || !currentPlan.chunks) return;
+      selectedChunkSet.clear();
+      if (selectAll) {
+        for (const c of currentPlan.chunks) {
+          selectedChunkSet.add(c.chunk_index);
+        }
+      }
+      renderPlan(currentPlan);
+      await saveSettingsToServer();
+    }
+
+    async function setTargetMode(mode, hours) {
+      currentChunkMode = mode;
+      currentTargetHours = hours;
+      document.querySelectorAll(".target-pill").forEach((el) => el.classList.remove("active"));
+      if (mode === "single") {
+        document.getElementById("pillSingle").classList.add("active");
+      } else if (Math.abs(hours - 0.25) < 0.01) {
+        document.getElementById("pill15m").classList.add("active");
+      } else if (Math.abs(hours - 0.5) < 0.01) {
+        document.getElementById("pill30m").classList.add("active");
+      } else if (Math.abs(hours - 1) < 0.01) {
+        document.getElementById("pill1h").classList.add("active");
+      } else if (Math.abs(hours - 3) < 0.01) {
+        document.getElementById("pill3h").classList.add("active");
+      } else if (Math.abs(hours - 5) < 0.01) {
+        document.getElementById("pill5h").classList.add("active");
+      }
+      await saveSettingsToServer();
+    }
+
+    async function saveSettingsToServer() {
+      const levelVal = document.getElementById("antiCopyrightLevel").value;
+      const payload = {
+        project_name: document.getElementById("projectNameInput").value,
+        target_hours: currentTargetHours,
+        chunk_mode: currentChunkMode,
+        selected_chunks: Array.from(selectedChunkSet),
+        settings: {
+          resolution: document.getElementById("resolutionSelect").value,
+          fps: parseInt(document.getElementById("fpsSelect").value, 10),
+          trim_start_sec: parseFloat(document.getElementById("trimStartInput").value || "0"),
+          trim_end_sec: parseFloat(document.getElementById("trimEndInput").value || "0"),
+          clean_temp_after_done: document.getElementById("cleanTempCheck").checked,
+          anti_copyright: {
+            enabled: levelVal !== "off",
+            level: levelVal === "off" ? "basic" : levelVal,
+            flip_horizontal: document.getElementById("flipHorizontalCheck").checked,
+          },
+        },
+      };
+      const res = await fetch("/api/update-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.selected_chunks) {
+        selectedChunkSet = new Set(data.selected_chunks);
+      }
+      if (data.plan) renderPlan(data.plan);
+    }
+
+    async function pickNativeFiles() {
+      const res = await fetch("/api/pick-files", { method: "POST", body: "{}" });
+      const data = await res.json();
+      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
+      if (data.plan) renderPlan(data.plan);
+    }
+
+    async function pickNativeFolder() {
+      const res = await fetch("/api/pick-folder", { method: "POST", body: "{}" });
+      const data = await res.json();
+      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
+      if (data.plan) renderPlan(data.plan);
+    }
+
+    async function reorderAction(action, index = -1) {
+      const res = await fetch("/api/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, index }),
+      });
+      const data = await res.json();
+      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
+      if (data.plan) renderPlan(data.plan);
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("dropzone").classList.add("dragover");
+    }
+
+    function handleDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("dropzone").classList.remove("dragover");
+    }
+
+    async function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("dropzone").classList.remove("dragover");
+
+      const fileList = Array.from(e.dataTransfer.files || []);
+      if (fileList.length === 0) return;
+
+      // Nếu người dùng kéo thả trực tiếp file .srt vào thì mở luôn vào Bảng sửa phụ đề Bước 4!
+      if (fileList.length === 1 && fileList[0].name.toLowerCase().endsWith(".srt")) {
+        const text = await fileList[0].text();
+        parseClientSrtIntoTable(text, fileList[0].name);
+        return;
+      }
+
+      fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+      const descriptors = fileList.map((f) => ({
+        name: f.name,
+        size: f.size,
+        path: f.path || "",
+      }));
+
+      const res = await fetch("/api/resolve-dropped", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: descriptors }),
+      });
+      const data = await res.json();
+      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
+      if (data.plan) renderPlan(data.plan);
+
+      const unresolved = data.unresolved_indices || [];
+      if (unresolved.length > 0) {
+        const uploadBox = document.getElementById("chunkUploadBox");
+        const uploadLabel = document.getElementById("chunkUploadLabel");
+        const uploadFill = document.getElementById("chunkUploadFill");
+        const uploadPct = document.getElementById("chunkUploadPct");
+        uploadBox.style.display = "block";
+
+        const CHUNK_SIZE = 8 * 1024 * 1024;
+        for (let i = 0; i < unresolved.length; i++) {
+          const file = fileList[unresolved[i]];
+          let offset = 0;
+          while (offset < file.size) {
+            const slice = file.slice(offset, offset + CHUNK_SIZE);
+            const isLast = offset + CHUNK_SIZE >= file.size;
+            const resp = await fetch("/api/upload-chunk", {
+              method: "POST",
+              headers: {
+                "X-File-Name": encodeURIComponent(file.name),
+                "X-Chunk-Offset": String(offset),
+                "X-Chunk-Last": isLast ? "1" : "0",
+              },
+              body: slice,
+            });
+            const chunkData = await resp.json();
+            offset += slice.size;
+            const pct = Math.min(100, Math.round((offset / file.size) * 100));
+            uploadLabel.textContent = `📥 Đang nạp file (${i + 1}/${unresolved.length}): ${file.name}`;
+            uploadFill.style.width = `${pct}%`;
+            uploadPct.textContent = `${pct}%`;
+            if (isLast) {
+              if (chunkData.selected_chunks) selectedChunkSet = new Set(chunkData.selected_chunks);
+              if (chunkData.plan) renderPlan(chunkData.plan);
+            }
+          }
+        }
+        uploadBox.style.display = "none";
+      }
+    }
+
+    // ==================== HÀM XỬ LÝ BẢNG SỬA PHỤ ĐỀ (.SRT) THỦ CÔNG ====================
+    function renderSrtTable() {
+      const tbody = document.getElementById("srtTableBody");
+      if (!srtRowsData || srtRowsData.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align:center; padding:28px; color:var(--muted);">
+              Chưa có dòng phụ đề nào. Hãy bấm <b>"📂 Mở File .SRT Có Sẵn"</b> hoặc <b>"🎙️ Tự Động Tách & Dịch Phụ Đề"</b>!
+            </td>
+          </tr>`;
+        return;
+      }
+
+      tbody.innerHTML = srtRowsData
+        .map(
+          (row, idx) => `
+        <tr>
+          <td style="font-weight:800; color:#94a3b8;">#${idx + 1}</td>
+          <td>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <input
+                type="text"
+                class="srt-ts-input"
+                value="${row.start || '00:00:00,000'}"
+                onchange="updateSrtCell(${idx}, 'start', this.value)"
+              />
+              <span>➔</span>
+              <input
+                type="text"
+                class="srt-ts-input"
+                value="${row.end || '00:00:03,000'}"
+                onchange="updateSrtCell(${idx}, 'end', this.value)"
+              />
+            </div>
+          </td>
+          <td style="font-size:13.5px; color:#cbd5e1;">${row.zh_text || "<span style='color:#64748b'>(Bản gốc)</span>"}</td>
+          <td>
+            <input
+              type="text"
+              class="srt-vi-input"
+              value="${(row.vi_text || "").replace(/"/g, "&quot;")}"
+              oninput="updateSrtCell(${idx}, 'vi_text', this.value)"
+            />
+          </td>
+          <td style="text-align:center;">
+            <button class="icon-btn" title="Xóa câu này" onclick="deleteSrtRow(${idx})">🗑️</button>
+          </td>
+        </tr>
+      `
+        )
+        .join("");
+    }
+
+    function updateSrtCell(idx, field, val) {
+      if (srtRowsData[idx]) {
+        srtRowsData[idx][field] = val;
+      }
+    }
+
+    function addSrtRow() {
+      const nextIdx = srtRowsData.length + 1;
+      const lastEnd = srtRowsData.length > 0 ? srtRowsData[srtRowsData.length - 1].end : "00:00:00,000";
+      srtRowsData.push({
+        index: nextIdx,
+        start: lastEnd,
+        end: "00:00:15,000",
+        zh_text: "",
+        vi_text: "Nhập câu thoại tiếng Việt mới tại đây...",
+      });
+      renderSrtTable();
+    }
+
+    function deleteSrtRow(idx) {
+      srtRowsData.splice(idx, 1);
+      renderSrtTable();
+    }
+
+    function replaceAllInSrt() {
+      const findStr = document.getElementById("findWordInput").value;
+      const repStr = document.getElementById("replaceWordInput").value;
+      if (!findStr) {
+        alert("Hãy nhập từ bị dịch sai cần tìm!");
+        return;
+      }
+      let count = 0;
+      srtRowsData.forEach((row) => {
+        if (row.vi_text && row.vi_text.includes(findStr)) {
+          row.vi_text = row.vi_text.split(findStr).join(repStr);
+          count++;
+        }
+      });
+      renderSrtTable();
+      document.getElementById("srtStatusLabel").textContent =
+        `⚡ Đã thay thế "${findStr}" ➔ "${repStr}" trong ${count} câu phụ đề! Nhớ bấm Lưu nhé.`;
+    }
+
+    function parseClientSrtIntoTable(rawText, filename) {
+      const blocks = rawText.replace(/\r\n/g, "\n").trim().split(/\n\s*\n/);
+      const parsed = [];
+      blocks.forEach((b) => {
+        const lines = b.split("\n").map((s) => s.trim()).filter(Boolean);
+        const tsIdx = lines.findIndex((l) => l.includes("-->"));
+        if (tsIdx !== -1) {
+          const parts = lines[tsIdx].split("-->");
+          parsed.push({
+            index: parsed.length + 1,
+            start: parts[0].trim(),
+            end: parts[1].trim().split(" ")[0],
+            zh_text: "",
+            vi_text: lines.slice(tsIdx + 1).join(" "),
+          });
+        }
+      });
+      if (parsed.length > 0) {
+        srtRowsData = parsed;
+        renderSrtTable();
+        document.getElementById("srtStatusLabel").textContent =
+          `📂 Đã nạp ${parsed.length} câu từ file ${filename}. Bạn có thể sửa trực tiếp bên dưới!`;
+      }
+    }
+
+    async function pickSrtFileToEdit() {
+      const res = await fetch("/api/srt/pick-file", { method: "POST", body: "{}" });
+      const data = await res.json();
+      if (data.srt_rows) {
+        srtRowsData = data.srt_rows;
+        renderSrtTable();
+      }
+      if (data.srt_status_msg) {
+        document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+      }
+    }
+
+    async function saveEditedSrt() {
+      const res = await fetch("/api/srt/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ srt_rows: srtRowsData }),
+      });
+      const data = await res.json();
+      if (data.srt_status_msg) {
+        document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+      }
+    }
+
+    async function autoTranscribeVideo() {
+      document.getElementById("srtStatusLabel").textContent =
+        "⏳ Đang tách âm thanh & chạy AI Whisper dịch Tiếng Trung ➔ Tiếng Việt...";
+      const res = await fetch("/api/srt/auto-transcribe", { method: "POST", body: "{}" });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message);
+        document.getElementById("srtStatusLabel").textContent = "⚠️ " + data.message;
+        return;
+      }
+      srtRowsData = data.srt_rows || [];
+      renderSrtTable();
+      document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+    }
+
+    async function renderTtsFromEditedSrt() {
+      const btn = document.getElementById("ttsRenderBtn");
+      const voice = document.getElementById("ttsVoiceSelect").value;
+      btn.disabled = true;
+      btn.textContent = "⏳ Đang tạo Thuyết Minh AI từ bản Sub đã sửa...";
+      try {
+        const res = await fetch("/api/srt/generate-tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ srt_rows: srtRowsData, voice }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert("Lỗi: " + data.message);
+        } else {
+          document.getElementById("srtStatusLabel").textContent = data.message;
+          alert(data.message);
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🚀 3. TẠO FILE THUYẾT MINH (.MP3) & GHÉP VÀO VIDEO";
+      }
+    }
+
+    function openLinkModal() {
+      document.getElementById("linkModal").classList.add("active");
+    }
+
+    function closeLinkModal() {
+      document.getElementById("linkModal").classList.remove("active");
+    }
+
+    async function submitLinks() {
+      const raw = document.getElementById("linksTextarea").value || "";
+      const links = raw
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (links.length > 0) {
+        const res = await fetch("/api/add-links", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ links }),
+        });
+        const data = await res.json();
+        if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
+        if (data.plan) renderPlan(data.plan);
+      }
+      document.getElementById("linksTextarea").value = "";
+      closeLinkModal();
+    }
+
+    async function startPipeline() {
+      await saveSettingsToServer();
+      const res = await fetch("/api/start", { method: "POST", body: "{}" });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message || "Chưa thể bắt đầu!");
+        return;
+      }
+      document.getElementById("startBtn").disabled = true;
+      document.getElementById("stopBtn").style.display = "inline-flex";
+    }
+
+    async function stopPipeline() {
+      await fetch("/api/stop", { method: "POST", body: "{}" });
+    }
+
+    async function openOutputFolder() {
+      await fetch("/api/open-output", { method: "POST", body: "{}" });
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const st = await res.json();
+
+        document.getElementById("statusPhaseText").textContent = `Trạng thái: ${st.status_phase}`;
+        document.getElementById("elapsedTimeText").textContent = `⏱ ${st.elapsed_hms}`;
+
+        document.getElementById("overallProgFill").style.width = `${st.overall_pct}%`;
+        document.getElementById("overallProgText").textContent = `${st.overall_pct}%`;
+
+        document.getElementById("epProgFill").style.width = `${st.current_ep_pct}%`;
+        document.getElementById("epProgText").textContent = `${st.current_ep_pct}%`;
+
+        document.getElementById("startBtn").disabled = st.is_running;
+        document.getElementById("stopBtn").style.display = st.is_running ? "inline-flex" : "none";
+
+        if (st.logs && st.logs.length > 0) {
+          const logBox = document.getElementById("logBox");
+          logBox.innerHTML = st.logs.map((l) => `<div class="log-line">${l}</div>`).join("");
+          logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        const finBox = document.getElementById("finishedBox");
+        const finList = document.getElementById("finishedList");
+        if (st.finished_outputs && st.finished_outputs.length > 0) {
+          finBox.style.display = "block";
+          finList.innerHTML = st.finished_outputs
+            .map(
+              (f) => `
+            <div class="chunk-card selected" style="cursor:default;">
+              <div>
+                <div class="chunk-card-title" style="color: #6ee7b7;">✅ ${f.name}</div>
+                <div class="chunk-card-sub">Thời lượng: <b>${f.duration_human}</b> | Dung lượng: <b>${f.size_label}</b></div>
+              </div>
+              <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="openOutputFolder()">
+                📂 Lấy File
+              </button>
+            </div>
+          `
+            )
+            .join("");
+        }
+      } catch (e) {}
+    }
+
+    fetchSystemInit();
+    setInterval(pollStatus, 1000);
+  </script>
+</body>
+</html>
