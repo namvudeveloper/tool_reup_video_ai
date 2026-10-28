@@ -74,25 +74,35 @@ def probe_item_metadata(ffprobe_path: str, path_or_url: str, cookies_browser: st
             else:
                 import yt_dlp
 
-                ydl_opts = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "skip_download": True,
-                    "extract_flat": "in_playlist",
-                }
-                if cookies_browser:
-                    ydl_opts["cookiesfrombrowser"] = (cookies_browser,)
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(path_or_url, download=False)
-                    if info:
-                        title = str(info.get("title") or title)
-                        if info.get("duration"):
-                            dur = float(info["duration"])
-                        elif info.get("entries"):
-                            entries = list(info["entries"])
-                            total_d = sum(float(e.get("duration") or 0.0) for e in entries if e)
-                            if total_d > 0:
-                                dur = total_d
+                def _extract_with_opts(use_cookies: bool):
+                    ydl_opts: Dict[str, Any] = {
+                        "quiet": True,
+                        "no_warnings": True,
+                        "skip_download": True,
+                        "extract_flat": "in_playlist",
+                    }
+                    if use_cookies and cookies_browser:
+                        ydl_opts["cookiesfrombrowser"] = (cookies_browser,)
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        return ydl.extract_info(path_or_url, download=False)
+
+                try:
+                    info = _extract_with_opts(use_cookies=bool(cookies_browser))
+                except Exception as cookie_exc:
+                    if cookies_browser and "cookie database" in str(cookie_exc).lower():
+                        info = _extract_with_opts(use_cookies=False)
+                    else:
+                        raise
+
+                if info:
+                    title = str(info.get("title") or title)
+                    if info.get("duration"):
+                        dur = float(info["duration"])
+                    elif info.get("entries"):
+                        entries = list(info["entries"])
+                        total_d = sum(float(e.get("duration") or 0.0) for e in entries if e)
+                        if total_d > 0:
+                            dur = total_d
         except Exception as exc:
             detail = re.sub(r"\x1b\[[0-9;]*m", "", str(exc)).strip()
             raise RuntimeError(

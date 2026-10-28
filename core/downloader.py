@@ -38,6 +38,11 @@ def _is_local_file(link: str, project_root: Path) -> Path | None:
 def _explain_download_error(exc: Exception, cookies_browser: str) -> RuntimeError:
     """Turn an HTML/blocked media response into an actionable UI error."""
     detail = re.sub(r"\x1b\[[0-9;]*m", "", str(exc)).strip()
+    if "cookie database" in detail.lower():
+        return RuntimeError(
+            "Trên Windows, Chrome/Edge khóa file Cookie khi trình duyệt đang mở. "
+            "Hãy chọn 'Không dùng cookie' (hoặc dùng Firefox) ở mục 'Cookie đăng nhập', hoặc đóng hoàn toàn Chrome/Edge trước khi tải."
+        )
     if "Unable to extract initial state" in detail:
         return RuntimeError(
             "yt-dlp hiện không đọc được dữ liệu trình phát Bilibili của video này, dù link có thể phát trong trình duyệt. "
@@ -63,6 +68,7 @@ def download_all_videos(
     ffmpeg_path: str,
     settings: Dict[str, Any],
     slice_range: Tuple[float, float] | None = None,
+    progress_callback: Any = None,
 ) -> List[Path]:
     """
     Bước 1: Tải danh sách video chất lượng cao (1080p/4K) về thư mục raw/
@@ -110,6 +116,7 @@ def download_all_videos(
                 output_mp4=target_mp4,
                 ffmpeg_path=ffmpeg_path,
                 slice_range=slice_range,
+                progress_callback=progress_callback,
             )
             size_mb = target_mp4.stat().st_size / (1024 * 1024)
             log_success(f"[Tập {idx}/{total}] Hoàn tất tải Bilibili: {target_mp4.name} ({size_mb:.1f} MB)")
@@ -159,7 +166,7 @@ def download_all_videos(
             except Exception:
                 pass
 
-        try:
+        def _run_ydl_download(opts: Dict[str, Any]) -> None:
             if RICH_AVAILABLE:
                 with Progress(
                     SpinnerColumn(),
@@ -185,8 +192,8 @@ def download_all_videos(
                             total_bytes = d.get("total_bytes") or d.get("downloaded_bytes") or 100
                             progress.update(task_id, total=total_bytes, completed=total_bytes)
 
-                    ydl_opts["progress_hooks"] = [_progress_hook]
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    opts["progress_hooks"] = [_progress_hook]
+                    with yt_dlp.YoutubeDL(opts) as ydl:
                         ydl.download([link])
             else:
                 def _simple_hook(d: Dict[str, Any]):
@@ -197,11 +204,25 @@ def download_all_videos(
                     elif d.get("status") == "finished":
                         print(f"\r  -> Đang tải Tập {idx}/{total}: 100% (Đang đóng gói MP4...)")
 
-                ydl_opts["progress_hooks"] = [_simple_hook]
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                opts["progress_hooks"] = [_simple_hook]
+                with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([link])
+
+        try:
+            _run_ydl_download(ydl_opts)
         except Exception as exc:
-            raise _explain_download_error(exc, cookies_browser) from exc
+            if cookies_browser and "cookie database" in str(exc).lower():
+                log_warn(
+                    f"Trình duyệt '{cookies_browser}' đang mở và khóa Cookie trên Windows -> Tự động thử tải không cần Cookie..."
+                )
+                fallback_opts = dict(ydl_opts)
+                fallback_opts.pop("cookiesfrombrowser", None)
+                try:
+                    _run_ydl_download(fallback_opts)
+                except Exception as exc2:
+                    raise _explain_download_error(exc2, cookies_browser) from exc2
+            else:
+                raise _explain_download_error(exc, cookies_browser) from exc
 
         # Tìm file vừa tải xong (đề phòng trường hợp đuôi khác .mp4)
         if target_mp4.is_file():

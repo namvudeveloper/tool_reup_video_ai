@@ -45,10 +45,25 @@ def extract_bvid_and_page(url: str) -> Tuple[Optional[str], Optional[int]]:
     return bvid, p_val
 
 
+class _SilentLogger:
+    def debug(self, msg: str) -> None:
+        pass
+
+    def info(self, msg: str) -> None:
+        pass
+
+    def warning(self, msg: str) -> None:
+        pass
+
+    def error(self, msg: str) -> None:
+        pass
+
+
 def _get_bilibili_ydl():
     """
-    Khởi tạo YoutubeDL tích hợp sẵn Cookie từ Google Chrome (profile 'Default' để nạp tức thì trong 0.05s,
-    không quét toàn bộ 46.000 file cache của Chrome) và lấy buvid3/buvid4 hợp lệ từ Bilibili SPI.
+    Khởi tạo YoutubeDL tích hợp sẵn Cookie từ Google Chrome (nếu đọc được) và lấy buvid3/buvid4
+    hợp lệ từ Bilibili SPI. Trên Windows, khi Chrome đang mở và khóa file SQLite Cookies,
+    tự động chuyển sang chế độ không cần Cookie Chrome (dùng buvid3 + try_look=1) để không bị lỗi.
     """
     global _YDL_INSTANCE
     if _YDL_INSTANCE is not None:
@@ -56,13 +71,13 @@ def _get_bilibili_ydl():
 
     import yt_dlp
 
-    opts: Dict[str, Any] = {
+    base_opts: Dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "http_headers": BILI_HEADERS,
+        "logger": _SilentLogger(),
     }
 
-    # Nạp trực tiếp từ thư mục profile Default của Chrome (0.01 giây, không quét 46.000 file)
     chrome_default_mac = Path.home() / "Library/Application Support/Google/Chrome/Default"
     chrome_default_win = (
         Path(os.environ.get("LOCALAPPDATA", ""))
@@ -70,21 +85,44 @@ def _get_bilibili_ydl():
         if os.environ.get("LOCALAPPDATA")
         else None
     )
-    if chrome_default_mac.is_dir():
-        opts["cookiesfrombrowser"] = ("chrome", str(chrome_default_mac), None, None)
-    elif chrome_default_win and chrome_default_win.is_dir():
-        opts["cookiesfrombrowser"] = ("chrome", str(chrome_default_win), None, None)
 
-    ydl = yt_dlp.YoutubeDL(opts)
+    ydl = None
+    cookie_source = None
+    if chrome_default_mac.is_dir():
+        cookie_source = ("chrome", str(chrome_default_mac), None, None)
+    elif chrome_default_win and chrome_default_win.is_dir():
+        cookie_source = ("chrome", str(chrome_default_win), None, None)
+
+    if cookie_source is not None:
+        try:
+            opts_with_cookie = dict(base_opts)
+            opts_with_cookie["cookiesfrombrowser"] = cookie_source
+            candidate = yt_dlp.YoutubeDL(opts_with_cookie)
+            # Kiểm tra truy cập cookiejar ngay; nếu Chrome trên Windows đang mở và khóa DB sẽ ném lỗi tại đây
+            _ = candidate.cookiejar
+            ydl = candidate
+        except Exception:
+            ydl = None
+
+    if ydl is None:
+        ydl = yt_dlp.YoutubeDL(dict(base_opts))
 
     # Cấp phát buvid3 & buvid4 thật từ API chính thức của Bilibili để vượt kiểm tra 412 / -352
     try:
+        import http.cookiejar
+
         spi_raw = ydl.urlopen("https://api.bilibili.com/x/frontend/finger/spi").read().decode("utf-8")
         spi_data = json.loads(spi_raw).get("data", {})
-        if spi_data.get("b_3"):
-            ydl.cookiejar.set_cookie(
-                yt_dlp.cookies.LenientSimpleCookie(f"buvid3={spi_data['b_3']}; Domain=.bilibili.com; Path=/")
-            )
+        for cname, key in (("buvid3", "b_3"), ("buvid4", "b_4")):
+            val = spi_data.get(key)
+            if val:
+                ydl.cookiejar.set_cookie(
+                    http.cookiejar.Cookie(
+                        0, cname, str(val), None, False,
+                        ".bilibili.com", True, True, "/", True,
+                        False, None, True, None, None, {}, False,
+                    )
+                )
     except Exception:
         pass
 
@@ -270,13 +308,22 @@ def download_bilibili_slice_via_ffmpeg(
             "-nostats",
         ]
 
-        cmd.extend(["-headers", headers_str])
+        reconnect_opts = [
+            "-reconnect",
+            "1",
+            "-reconnect_streamed",
+            "1",
+            "-reconnect_delay_max",
+            "5",
+        ]
+
+        cmd.extend(["-headers", headers_str, *reconnect_opts])
         if seg["ss"] > 0:
             cmd.extend(["-ss", f"{seg['ss']:.3f}"])
         cmd.extend(["-i", v_url])
 
         if a_url:
-            cmd.extend(["-headers", headers_str])
+            cmd.extend(["-headers", headers_str, *reconnect_opts])
             if seg["ss"] > 0:
                 cmd.extend(["-ss", f"{seg['ss']:.3f}"])
             cmd.extend(["-i", a_url])

@@ -31,6 +31,13 @@ from core.processor import (
 )
 from core.system_check import check_disk_space, find_ffmpeg_binaries, get_os_name, select_video_encoder
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 WEB_UI_DIR = PROJECT_ROOT / "web_ui"
 RAW_DIR = PROJECT_ROOT / "raw"
@@ -129,12 +136,18 @@ class PipelineState:
                 "saturation": 1.07,
                 "speed_factor": 1.04,
                 "flip_horizontal": False,
-                "pitch_shift": 1.02,
+                "pitch_shift": 1.0,
             },
             "audio_normalize": True,
             "clean_temp_after_done": True,
             "cookies_from_browser": "",
             "whisper_model": "small",
+            "blur_sub": {
+                "mode": "delogo",
+                "y_pct": 86.0,
+                "h_pct": 10.0,
+                "w_pct": 82.0,
+            },
         }
 
         # Trạng thái bảng sửa Phụ đề (.SRT) thủ công & Lồng tiếng
@@ -158,6 +171,32 @@ class PipelineState:
         self.finished_outputs: List[Dict[str, Any]] = []
         self.error_message: str = ""
         self.started_at: float = 0.0
+        self._load_existing_outputs()
+
+    def _load_existing_outputs(self) -> None:
+        if not OUTPUT_DIR.is_dir():
+            return
+        mp4s = sorted(
+            (p for p in OUTPUT_DIR.glob("*.mp4") if p.is_file() and not p.name.endswith("_Lồng_Tiếng_Việt.mp4")),
+            key=lambda p: natural_sort_key(p.name),
+        )
+        for idx, p in enumerate(mp4s, start=1):
+            size_gb = p.stat().st_size / (1024**3)
+            size_mb = p.stat().st_size / (1024**2)
+            size_label = f"{size_gb:.2f} GB" if size_gb >= 1.0 else f"{size_mb:.1f} MB"
+            self.finished_outputs.append(
+                {
+                    "chunk_index": idx,
+                    "name": p.name,
+                    "path": str(p.resolve()),
+                    "duration_hms": "00:15:00",
+                    "duration_human": "Đã xuất sẵn",
+                    "size_label": size_label,
+                }
+            )
+        if self.finished_outputs:
+            self.active_video_for_srt = self.finished_outputs[-1]["path"]
+            self.srt_status_msg = f"Sẵn sàng tách phụ đề từ: {Path(self.active_video_for_srt).name}"
 
     def add_log(self, msg: str) -> None:
         ts = time.strftime("%H:%M:%S")
@@ -177,7 +216,124 @@ def _get_srt_target() -> str:
     candidates = [STATE.active_video_for_srt]
     candidates.extend(out.get("path", "") for out in reversed(STATE.finished_outputs))
     candidates.extend(item.get("source", "") for item in STATE.items if item.get("is_local"))
+    if OUTPUT_DIR.is_dir():
+        recent_mp4s = sorted(
+            (p for p in OUTPUT_DIR.glob("*.mp4") if p.is_file() and not p.name.endswith("_Lồng_Tiếng_Việt.mp4")),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        candidates.extend(str(p.resolve()) for p in recent_mp4s)
     return next((str(path) for path in candidates if path and Path(path).is_file()), "")
+
+
+def _list_available_preview_videos() -> List[Dict[str, str]]:
+    """Liệt kê tất cả các file video có thể xem trước (trong output/ và file gốc trên máy)."""
+    seen = set()
+    videos: List[Dict[str, str]] = []
+
+    if OUTPUT_DIR.is_dir():
+        out_files = sorted(
+            (p for p in OUTPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for p in out_files:
+            rp = str(p.resolve())
+            if rp not in seen:
+                seen.add(rp)
+                size_mb = p.stat().st_size / (1024 * 1024)
+                tag = "🗣️ Đã Lồng Tiếng" if p.name.endswith("_Lồng_Tiếng_Việt.mp4") else "📦 Đã Xuất (output/)"
+                videos.append(
+                    {
+                        "path": rp,
+                        "name": p.name,
+                        "label": f"[{tag}] {p.name} ({size_mb:.1f} MB)",
+                    }
+                )
+
+    for it in STATE.items:
+        if it.get("is_local"):
+            src = str(it.get("source", ""))
+            p = Path(src)
+            if p.is_file():
+                rp = str(p.resolve())
+                if rp not in seen:
+                    seen.add(rp)
+                    size_mb = p.stat().st_size / (1024 * 1024)
+                    videos.append(
+                        {
+                            "path": rp,
+                            "name": p.name,
+                            "label": f"[📂 File Gốc] {p.name} ({size_mb:.1f} MB)",
+                        }
+                    )
+    return videos
+
+
+def _list_available_tts_audios() -> List[Dict[str, str]]:
+    """Liệt kê tất cả các file .mp3/.wav thuyết minh đã tạo trong output/ (ưu tiên khớp tên video đang chọn)."""
+    audios: List[Dict[str, str]] = []
+    if not OUTPUT_DIR.is_dir():
+        return audios
+    active_vid = _get_srt_target()
+    active_stem = Path(active_vid).stem.lower() if active_vid else ""
+
+    files = [
+        p for p in OUTPUT_DIR.iterdir()
+        if p.is_file() and p.suffix.lower() in (".mp3", ".wav", ".m4a")
+    ]
+
+    def _sort_key(p: Path) -> Tuple[int, float]:
+        name_low = p.name.lower()
+        is_match = 1 if (active_stem and (active_stem in name_low or name_low.split(".")[0] in active_stem)) else 0
+        return (is_match, p.stat().st_mtime)
+
+    for p in sorted(files, key=_sort_key, reverse=True):
+        rp = str(p.resolve())
+        size_mb = p.stat().st_size / (1024 * 1024)
+        audios.append(
+            {
+                "path": rp,
+                "name": p.name,
+                "label": f"🔊 {p.name} ({size_mb:.1f} MB)",
+            }
+        )
+    return audios
+
+
+def _native_pick_audio_file() -> Optional[str]:
+    """Mở hộp thoại chọn file .mp3 / .wav thuyết minh có sẵn trên máy."""
+    sys_name = platform.system().lower()
+    if sys_name == "darwin":
+        script = (
+            'tell application "SystemUIServer"\n'
+            "activate\n"
+            'set theFile to choose file with prompt "Chọn file âm thanh thuyết minh (.mp3 / .wav):"\n'
+            "return POSIX path of theFile\n"
+            "end tell"
+        )
+        res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    elif sys_name == "windows":
+        ps_cmd = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$f = New-Object System.Windows.Forms.OpenFileDialog; "
+            "$f.Title = 'Chọn file âm thanh thuyết minh (.mp3 / .wav)'; "
+            "$f.Filter = 'Audio Files (*.mp3;*.wav;*.m4a)|*.mp3;*.wav;*.m4a|All Files (*.*)|*.*'; "
+            "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $f.FileName }"
+        )
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-STA", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    return None
 
 
 def _native_pick_files() -> List[str]:
@@ -417,6 +573,14 @@ def _run_pipeline_worker() -> None:
                     STATE.add_log(f"⬇️ [Đoạn {global_ep_counter}/{total_eps}] Đang tải: {ep['name']}")
                     from core.downloader import download_all_videos
 
+                    def _dl_progress(pct: float, ep_num: int = global_ep_counter) -> None:
+                        p_val = round(min(100.0, max(0.0, pct)), 1)
+                        with STATE.lock:
+                            STATE.current_ep_pct = p_val
+                            base = ((ep_num - 1) / max(1, total_eps)) * 92.0
+                            step = (p_val / 100.0) * (40.0 / max(1, total_eps))
+                            STATE.overall_pct = min(99.0, round(base + step, 1))
+
                     dl_list = download_all_videos(
                         links=[source_str],
                         raw_dir=RAW_DIR / f"c{c_idx:03d}_ep{global_ep_counter:03d}",
@@ -424,6 +588,7 @@ def _run_pipeline_worker() -> None:
                         ffmpeg_path=STATE.ffmpeg_path,
                         settings=STATE.settings,
                         slice_range=(slice_start, slice_dur) if slice_dur > 0 else None,
+                        progress_callback=_dl_progress,
                     )
                     in_file = dl_list[0]
                     used_remote_slice = True
@@ -700,6 +865,69 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         return json.loads(raw.decode("utf-8"))
 
+    def _stream_video_file(self, video_path: Path) -> None:
+        if not video_path.is_file():
+            self.send_error(404, "Video not found")
+            return
+
+        file_size = video_path.stat().st_size
+        ext = video_path.suffix.lower()
+        mime_map = {
+            ".mp4": "video/mp4",
+            ".m4v": "video/mp4",
+            ".webm": "video/webm",
+            ".mov": "video/quicktime",
+            ".mkv": "video/x-matroska",
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+        }
+        content_type = mime_map.get(ext, "video/mp4")
+
+        range_header = self.headers.get("Range")
+        start = 0
+        end = file_size - 1
+        status_code = 200
+
+        if range_header and range_header.startswith("bytes="):
+            try:
+                range_spec = range_header.split("=", 1)[1].strip()
+                parts = range_spec.split("-", 1)
+                if parts[0]:
+                    start = int(parts[0])
+                if len(parts) > 1 and parts[1]:
+                    end = min(file_size - 1, int(parts[1]))
+                if 0 <= start <= end < file_size:
+                    status_code = 206
+            except Exception:
+                start = 0
+                end = file_size - 1
+                status_code = 200
+
+        chunk_len = max(0, end - start + 1)
+        try:
+            self.send_response(status_code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Accept-Ranges", "bytes")
+            if status_code == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+            self.send_header("Content-Length", str(chunk_len))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+
+            with open(video_path, "rb") as f:
+                f.seek(start)
+                remaining = chunk_len
+                buf_size = 256 * 1024
+                while remaining > 0:
+                    data = f.read(min(buf_size, remaining))
+                    if not data:
+                        break
+                    self.wfile.write(data)
+                    remaining -= len(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -712,6 +940,13 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
+            return
+
+        if path == "/api/video-stream":
+            qs = urllib.parse.parse_qs(parsed.query)
+            req_path = (qs.get("path", [""])[0] or "").strip()
+            target = Path(req_path) if req_path else Path(_get_srt_target())
+            self._stream_video_file(target)
             return
 
         if path == "/api/system":
@@ -732,6 +967,8 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     "srt_rows": STATE.srt_rows,
                     "active_srt_path": STATE.active_srt_path,
                     "active_video_for_srt": _get_srt_target(),
+                    "available_videos": _list_available_preview_videos(),
+                    "available_audios": _list_available_tts_audios(),
                     "finished_outputs": STATE.finished_outputs,
                     "srt_status_msg": STATE.srt_status_msg,
                 }
@@ -755,6 +992,8 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                         "logs": STATE.logs[-60:],
                         "finished_outputs": STATE.finished_outputs,
                         "active_video_for_srt": _get_srt_target(),
+                        "available_videos": _list_available_preview_videos(),
+                    "available_audios": _list_available_tts_audios(),
                         "error_message": STATE.error_message,
                         "srt_status_msg": STATE.srt_status_msg,
                     }
@@ -899,9 +1138,146 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     for k, v in body["settings"].items():
                         if k == "anti_copyright" and isinstance(v, dict):
                             STATE.settings["anti_copyright"].update(v)
+                        elif k == "blur_sub" and isinstance(v, dict):
+                            STATE.settings.setdefault("blur_sub", {}).update(v)
                         else:
                             STATE.settings[k] = v
             return self._send_current_plan(reset_selection=reset_sel)
+
+        if path == "/api/blur-video-now":
+            target_vid = str(body.get("path", "") or _get_srt_target()).strip()
+            if (not target_vid or not Path(target_vid).is_file()) and not locals().get("only_mp3", False):
+                self._send_json({"ok": False, "message": "Chưa có video nào đang được chọn để làm mờ chữ Trung Quốc!"})
+                return
+            blur_cfg = body.get("blur_sub") or STATE.settings.get("blur_sub") or {}
+            mode_str = str(blur_cfg.get("mode", "delogo") or "delogo").lower()
+            if mode_str in ("off", "none", ""):
+                mode_str = "delogo"
+                blur_cfg = dict(blur_cfg, mode="delogo")
+
+            from core.processor import _parse_resolution, build_blur_sub_filter
+
+            in_p = Path(target_vid).resolve()
+            out_p = OUTPUT_DIR / f"{in_p.stem}_Mo_Sub_Trung.mp4"
+            # Đo kích thước thực của video đầu vào
+            vid_w, vid_h = _parse_resolution(str(STATE.settings.get("resolution", "1920x1080")))
+            try:
+                if STATE.ffprobe_path:
+                    res_probe = subprocess.run(
+                        [
+                            STATE.ffprobe_path,
+                            "-v",
+                            "error",
+                            "-select_streams",
+                            "v:0",
+                            "-show_entries",
+                            "stream=width,height",
+                            "-of",
+                            "json",
+                            str(in_p),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    pdata = json.loads(res_probe.stdout or "{}")
+                    st_list = pdata.get("streams") or []
+                    if st_list:
+                        vid_w = int(st_list[0].get("width") or vid_w)
+                        vid_h = int(st_list[0].get("height") or vid_h)
+            except Exception:
+                pass
+
+            flt = build_blur_sub_filter(vid_w, vid_h, blur_cfg)
+            if not flt:
+                self._send_json({"ok": False, "message": "Hãy chọn chế độ làm mờ chữ Trung Quốc trước!"})
+                return
+
+            STATE.add_log(f"🌫️ Đang làm mờ chữ Trung Quốc trên video: {in_p.name} ➔ {out_p.name}...")
+            cmd_blur = [
+                STATE.ffmpeg_path,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(in_p),
+                "-vf",
+                flt,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "20",
+                "-c:a",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(out_p),
+            ]
+            res_b = subprocess.run(cmd_blur, capture_output=True, text=True, check=False)
+            if res_b.returncode != 0 or not out_p.is_file():
+                self._send_json({"ok": False, "message": f"Làm mờ chữ thất bại: {res_b.stderr}"})
+                return
+
+            with STATE.lock:
+                STATE.active_video_for_srt = str(out_p.resolve())
+                STATE.srt_status_msg = f"✅ Đã làm mờ chữ Trung Quốc xong: {out_p.name}"
+            STATE.add_log(f"✅ Đã xuất video làm mờ chữ Trung Quốc: {out_p.name}")
+            self._send_json(
+                {
+                    "ok": True,
+                    "blurred_video": str(out_p.resolve()),
+                    "active_video_for_srt": str(out_p.resolve()),
+                    "available_videos": _list_available_preview_videos(),
+                    "available_audios": _list_available_tts_audios(),
+                    "message": f"🎉 Đã làm mờ chữ Trung Quốc thành công: {out_p.name}",
+                }
+            )
+            return
+
+        if path == "/api/set-active-video":
+            vid_path = str(body.get("path", "") or "").strip()
+            if vid_path and Path(vid_path).is_file():
+                resolved_vid = Path(vid_path).resolve()
+                stem = resolved_vid.stem.replace("_Lồng_Tiếng_Việt", "")
+                vi_candidate = SRT_WORK_DIR / f"{stem}.vi.srt"
+                zh_candidate = SRT_WORK_DIR / f"{stem}.zh.srt"
+                with STATE.lock:
+                    STATE.active_video_for_srt = str(resolved_vid)
+                    if vi_candidate.is_file() and vi_candidate.stat().st_size > 10:
+                        vi_cues = parse_srt_text(vi_candidate.read_text(encoding="utf-8-sig", errors="replace"))
+                        zh_map_local: Dict[int, str] = {}
+                        if zh_candidate.is_file():
+                            for zc in parse_srt_text(zh_candidate.read_text(encoding="utf-8-sig", errors="replace")):
+                                zh_map_local[zc["index"]] = zc["text"]
+                        STATE.srt_rows = [
+                            {
+                                "index": c["index"],
+                                "start": c["start"],
+                                "end": c["end"],
+                                "zh_text": zh_map_local.get(c["index"], ""),
+                                "vi_text": c["text"],
+                            }
+                            for c in vi_cues
+                        ]
+                        STATE.active_srt_path = str(vi_candidate)
+                        STATE.srt_status_msg = f"🎬 Đang xem & chỉnh phụ đề cho: {resolved_vid.name} ({len(STATE.srt_rows)} câu)"
+                    else:
+                        STATE.srt_status_msg = f"🎬 Đang xem trước video: {resolved_vid.name}"
+            self._send_json(
+                {
+                    "ok": True,
+                    "active_video_for_srt": _get_srt_target(),
+                    "available_videos": _list_available_preview_videos(),
+                    "available_audios": _list_available_tts_audios(),
+                    "srt_rows": STATE.srt_rows,
+                    "active_srt_path": STATE.active_srt_path,
+                    "srt_status_msg": STATE.srt_status_msg,
+                }
+            )
+            return
 
         if path == "/api/reorder":
             action = body.get("action", "")
@@ -1003,6 +1379,10 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 return
 
             try:
+                import importlib
+                import audio_sub_pipeline
+
+                importlib.reload(audio_sub_pipeline)
                 from audio_sub_pipeline import extract_audio, transcribe_chinese, translate_srt
 
                 def set_srt_phase(message: str) -> None:
@@ -1017,7 +1397,12 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 zh_srt = SRT_WORK_DIR / f"{stem}.zh.srt"
                 vi_srt = SRT_WORK_DIR / f"{stem}.vi.srt"
 
-                reuse_zh = bool(body.get("reuse_zh")) and zh_srt.is_file() and zh_srt.stat().st_mtime >= vpath.stat().st_mtime
+                reuse_zh = (
+                    not bool(body.get("force_retranscribe"))
+                    and zh_srt.is_file()
+                    and zh_srt.stat().st_size > 20
+                    and zh_srt.stat().st_mtime >= vpath.stat().st_mtime
+                )
                 if reuse_zh:
                     set_srt_phase("🎙️ Dùng lại phụ đề tiếng Trung vừa nhận diện xong...")
                 else:
@@ -1068,12 +1453,151 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "message": str(exc)})
             return
 
+        if path == "/api/srt/pick-audio":
+            chosen_audio = _native_pick_audio_file()
+            if chosen_audio and Path(chosen_audio).is_file():
+                src_p = Path(chosen_audio).resolve()
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                if src_p.parent != OUTPUT_DIR.resolve():
+                    dst_p = OUTPUT_DIR / src_p.name
+                    try:
+                        shutil.copy2(src_p, dst_p)
+                        src_p = dst_p.resolve()
+                    except Exception:
+                        pass
+                self._send_json(
+                    {
+                        "ok": True,
+                        "audio_vi": str(src_p),
+                        "available_audios": _list_available_tts_audios(),
+                        "message": f"🔊 Đã chọn file thuyết minh: {src_p.name}",
+                    }
+                )
+            else:
+                self._send_json({"ok": False, "message": "Chưa chọn file âm thanh nào."})
+            return
+
+        if path == "/api/srt/export-capcut-video":
+            # Xuất Video Hoàn Chỉnh Kiểu CapCut từ:
+            # 1) Video đang chọn + 2) Vùng làm mờ chữ Trung + 3) Hardsub Tiếng Việt kiểu CapCut + 4) File .mp3 thuyết minh đã có sẵn!
+            rows = body.get("srt_rows", STATE.srt_rows)
+            target_vid = str(body.get("video_path", "") or _get_srt_target()).strip()
+            if (not target_vid or not Path(target_vid).is_file()) and not locals().get("only_mp3", False):
+                self._send_json({"ok": False, "message": "Chưa có video để xuất! Hãy chọn video trên trình Xem Trước hoặc hoàn tất Bước 3."})
+                return
+
+            SRT_WORK_DIR.mkdir(parents=True, exist_ok=True)
+            srt_file = Path(STATE.active_srt_path or (SRT_WORK_DIR / f"{Path(target_vid).stem}.vi.srt"))
+            if isinstance(rows, list) and len(rows) > 0:
+                srt_file.parent.mkdir(parents=True, exist_ok=True)
+                srt_file.write_text(compose_srt_text(rows), encoding="utf-8")
+                with STATE.lock:
+                    STATE.srt_rows = rows
+                    STATE.active_srt_path = str(srt_file.resolve())
+
+            req_audio = str(body.get("audio_path", "") or "").strip()
+            if not req_audio or not Path(req_audio).is_file():
+                avail_audios = _list_available_tts_audios()
+                if avail_audios:
+                    req_audio = avail_audios[0]["path"]
+
+            blur_cfg = body.get("blur_sub") if isinstance(body.get("blur_sub"), dict) else STATE.settings.get("blur_sub", {})
+            burn_cfg = body.get("burn_sub") if isinstance(body.get("burn_sub"), dict) else {"enabled": True, "color": "yellow", "font_size": 52, "box": True}
+            orig_vol = float(body.get("original_vol", 0.12) if body.get("original_vol") is not None else 0.12)
+            tts_vol = float(body.get("tts_vol", 1.0) if body.get("tts_vol") is not None else 1.0)
+
+            try:
+                import importlib
+                import audio_sub_pipeline
+
+                importlib.reload(audio_sub_pipeline)
+                from audio_sub_pipeline import _probe_duration, generate_tts_from_srt, mux_dubbed_video
+
+                # Nếu người dùng chưa có file .mp3 nào nhưng bấm Xuất luôn và có sub Tiếng Việt -> tự tạo .mp3
+                if (not req_audio or not Path(req_audio).is_file()) and srt_file.is_file():
+                    voice = str(body.get("voice", "vi-VN-NamMinhNeural"))
+                    auto_mp3 = OUTPUT_DIR / f"{Path(target_vid).stem}.vi_thuyet_minh.mp3"
+                    STATE.add_log(f"🗣️ Chưa có file .mp3 sẵn, đang tự động tạo thuyết minh ({voice})...")
+                    video_duration = _probe_duration(STATE.ffprobe_path, str(target_vid)) if STATE.ffprobe_path else 0.0
+                    def _on_tts_prog_auto(done_c: int, total_c: int, snippet: str) -> None:
+                        pct = int(round((done_c / max(1, total_c)) * 100))
+                        with STATE.lock:
+                            STATE.srt_status_msg = f"🗣️ Đang tạo file .MP3 thuyết minh: {done_c}/{total_c} câu ({pct}%) — {snippet}"
+
+                    generate_tts_from_srt(
+                        str(srt_file),
+                        str(auto_mp3),
+                        voice=voice,
+                        total_video_duration=video_duration,
+                        progress_callback=_on_tts_prog_auto,
+                    )
+                    req_audio = str(auto_mp3.resolve())
+
+                base_stem = Path(target_vid).stem
+                for suffix in ("_CapCut_Hoan_Chinh", "_Lồng_Tiếng_Việt", "_Da_Xoa_Sub_Trung"):
+                    if base_stem.endswith(suffix):
+                        base_stem = base_stem[: -len(suffix)]
+                out_mp4 = OUTPUT_DIR / f"{base_stem}_CapCut_Hoan_Chinh.mp4"
+
+                with STATE.lock:
+                    STATE.srt_status_msg = f"🎬 Đang kết xuất video CapCut (Làm mờ chữ Trung + In Sub Việt + Ghép MP3): {out_mp4.name}..."
+                STATE.add_log(f"🎬 Đang kết xuất video chuẩn CapCut ➔ {out_mp4.name} (MP3: {Path(req_audio).name if req_audio else 'Không dùng'})...")
+
+                mux_dubbed_video(
+                    input_video=str(target_vid),
+                    input_audio_vi=req_audio if (req_audio and Path(req_audio).is_file()) else None,
+                    input_srt_vi=str(srt_file) if srt_file.is_file() else None,
+                    output_video_path=str(out_mp4),
+                    original_audio_volume=orig_vol,
+                    tts_audio_volume=tts_vol,
+                    blur_sub_cfg=blur_cfg,
+                    burn_sub_cfg=burn_cfg,
+                )
+
+                size_mb = out_mp4.stat().st_size / (1024 * 1024)
+                dur_sec = _probe_duration(STATE.ffprobe_path, str(out_mp4)) if STATE.ffprobe_path else 0.0
+                with STATE.lock:
+                    STATE.active_video_for_srt = str(out_mp4.resolve())
+                    STATE.finished_outputs = [
+                        f for f in STATE.finished_outputs if f.get("path") != str(out_mp4.resolve())
+                    ]
+                    STATE.finished_outputs.append(
+                        {
+                            "index": len(STATE.finished_outputs) + 1,
+                            "name": out_mp4.name,
+                            "path": str(out_mp4.resolve()),
+                            "duration_human": format_hms(dur_sec),
+                            "size_label": f"{size_mb:.1f} MB",
+                        }
+                    )
+                    STATE.srt_status_msg = f"🎉 Đã xuất xong Video CapCut Hoàn Chỉnh: {out_mp4.name} ({size_mb:.1f} MB)!"
+                STATE.add_log(f"✅ Đã xuất xong Video CapCut Hoàn Chỉnh: {out_mp4.name} ({size_mb:.1f} MB)")
+
+                self._send_json(
+                    {
+                        "ok": True,
+                        "dubbed_video": str(out_mp4.resolve()),
+                        "audio_vi": req_audio,
+                        "active_video_for_srt": str(out_mp4.resolve()),
+                        "available_videos": _list_available_preview_videos(),
+                        "available_audios": _list_available_tts_audios(),
+                        "finished_outputs": STATE.finished_outputs,
+                        "message": f"🎉 Đã xuất xong Video CapCut Hoàn Chỉnh: {out_mp4.name} ({size_mb:.1f} MB)!",
+                    }
+                )
+            except Exception as exc:
+                with STATE.lock:
+                    STATE.srt_status_msg = f"❌ Lỗi xuất video CapCut: {exc}"
+                self._send_json({"ok": False, "message": str(exc)})
+            return
+
         if path == "/api/srt/generate-tts":
+            only_mp3 = bool(body.get("only_mp3", False))
             # Lưu bản sub đã sửa thủ công và tạo file thuyết minh .mp3 (+ ghép vào video nếu có)
             rows = body.get("srt_rows", STATE.srt_rows)
             voice = str(body.get("voice", "vi-VN-NamMinhNeural"))
             target_vid = _get_srt_target()
-            if not target_vid or not Path(target_vid).is_file():
+            if (not target_vid or not Path(target_vid).is_file()) and not locals().get("only_mp3", False):
                 self._send_json({"ok": False, "message": "Chưa có video để ghép thuyết minh. Hãy xuất xong Bước 3 hoặc chọn file video trên máy."})
                 return
             if not isinstance(rows, list) or not any(str(row.get("vi_text", "")).strip() for row in rows if isinstance(row, dict)):
@@ -1086,15 +1610,83 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
 
             out_mp3 = OUTPUT_DIR / f"{srt_file.stem}_thuyet_minh.mp3"
             try:
+                import importlib
+                import audio_sub_pipeline
+
+                importlib.reload(audio_sub_pipeline)
                 from audio_sub_pipeline import _probe_duration, generate_tts_from_srt, mux_dubbed_video
 
                 STATE.add_log(f"🗣️ Đang tạo Thuyết Minh Tiếng Việt ({voice}) từ bản phụ đề bạn đã sửa...")
-                video_duration = _probe_duration(STATE.ffprobe_path, str(target_vid)) if STATE.ffprobe_path else 0.0
-                generate_tts_from_srt(
+                video_duration = (
+                    _probe_duration(STATE.ffprobe_path, str(target_vid))
+                    if (STATE.ffprobe_path and target_vid and Path(target_vid).is_file())
+                    else 0.0
+                )
+
+                def _on_tts_prog(done_c: int, total_c: int, snippet: str) -> None:
+                    pct = int(round((done_c / max(1, total_c)) * 100))
+                    with STATE.lock:
+                        STATE.srt_status_msg = f"🗣️ Đang tạo file .MP3 thuyết minh: {done_c}/{total_c} câu ({pct}%) — {snippet}"
+
+                (generate_tts_from_srt if not out_mp3.is_file() or out_mp3.stat().st_mtime < srt_file.stat().st_mtime else (lambda *a, **kw: str(out_mp3)))(
+                    str(srt_file),
+                    str(out_mp3),
+                    voice=voice,
+                    total_video_duration=video_duration,
+                    progress_callback=_on_tts_prog,
+                )
+                if False: generate_tts_from_srt(
+                    str(srt_file),
+                    str(out_mp3),
+                    voice=voice,
+                    total_video_duration=video_duration,
+                    progress_callback=_on_tts_prog,
+                )
+                if False:
+                    pass
+                pass
+                (generate_tts_from_srt if not out_mp3.is_file() or out_mp3.stat().st_mtime < srt_file.stat().st_mtime else (lambda *a, **kw: str(out_mp3)))(
+                    str(srt_file),
+                    str(out_mp3),
+                    voice=voice,
+                    total_video_duration=video_duration,
+                    progress_callback=_on_tts_prog,
+                )
+                if False: generate_tts_from_srt(
                     str(srt_file), str(out_mp3), voice=voice,
                     total_video_duration=video_duration,
                 )
 
+                dubbed_mp4 = None
+                if not only_mp3:
+                    dubbed_mp4 = OUTPUT_DIR / f"{Path(target_vid).stem}_CapCut_Hoan_Chinh.mp4"
+                    mux_dubbed_video(
+                        str(target_vid),
+                        str(out_mp3),
+                        str(srt_file),
+                        str(dubbed_mp4),
+                        blur_sub_cfg=STATE.settings.get("blur_sub", {}),
+                        burn_sub_cfg={"enabled": True, "color": "yellow", "font_size": 52, "box": True},
+                    )
+                    STATE.add_log(f"🎬 Đã ghép Thuyết Minh + Phụ Đề đã sửa vào video: {dubbed_mp4.name}")
+                else:
+                    STATE.add_log(f"🔊 Đã xuất xong file MP3 thuyết minh: {out_mp3.name}")
+
+                self._send_json(
+                    {
+                        "ok": True,
+                        "audio_vi": str(out_mp3.resolve()),
+                        "available_audios": _list_available_tts_audios(),
+                        "dubbed_video": str(dubbed_mp4.resolve()) if dubbed_mp4 else None,
+                        "message": f"🎉 Đã tạo xong file thuyết minh: {out_mp3.name}"
+                        + (f" và video CapCut: {dubbed_mp4.name}" if dubbed_mp4 else ""),
+                    }
+                )
+            except Exception as exc_tts:
+                self._send_json({"ok": False, "message": str(exc_tts)})
+            return
+
+        if False:
                 dubbed_mp4 = OUTPUT_DIR / f"{Path(target_vid).stem}_Lồng_Tiếng_Việt.mp4"
                 mux_dubbed_video(str(target_vid), str(out_mp3), str(srt_file), str(dubbed_mp4))
                 STATE.add_log(f"🎬 Đã ghép Thuyết Minh + Phụ Đề đã sửa vào video: {dubbed_mp4.name}")
@@ -1187,7 +1779,8 @@ def start_gui_server(port: int = 8765, open_browser: bool = True) -> None:
     SRT_WORK_DIR.mkdir(parents=True, exist_ok=True)
 
     # Tự động giải phóng tiến trình gui_server cũ trên cổng 8765 (nếu có) để luôn dùng bản code mới nhất
-    if platform.system().lower() == "darwin":
+    sys_name = platform.system().lower()
+    if sys_name == "darwin":
         try:
             res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, check=False)
             for pid_str in (res.stdout or "").splitlines():
@@ -1195,6 +1788,24 @@ def start_gui_server(port: int = 8765, open_browser: bool = True) -> None:
                 if pid != os.getpid():
                     os.kill(pid, 9)
             time.sleep(0.3)
+        except Exception:
+            pass
+    elif sys_name == "windows":
+        try:
+            res = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, check=False)
+            pids = set()
+            target_suffix = f":{port}"
+            for line in (res.stdout or "").splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1].endswith(target_suffix) and parts[3].upper() == "LISTENING":
+                    if parts[4].isdigit():
+                        pid = int(parts[4])
+                        if pid > 0 and pid != os.getpid():
+                            pids.add(pid)
+            for pid in pids:
+                subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
+            if pids:
+                time.sleep(0.3)
         except Exception:
             pass
 

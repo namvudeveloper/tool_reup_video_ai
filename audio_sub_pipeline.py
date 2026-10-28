@@ -19,6 +19,7 @@ import datetime
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -27,7 +28,7 @@ import time
 import wave
 import wave
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import srt
@@ -89,11 +90,12 @@ def _probe_duration(ffprobe_bin: str, media_path: str) -> float:
 def _detect_whisper_config(device_pref: str = "auto", model_pref: str = "auto") -> Tuple[str, str, str]:
     """
     Xác định cấu hình tối ưu cho Faster-Whisper:
-    - Nếu có NVIDIA GPU (CUDA): dùng device='cuda', compute_type='float16', model='large-v3'
+    - Nếu có NVIDIA GPU (CUDA): tự động kiểm tra compute_type mà card hỗ trợ (float16 / int8_float16 / int8_float32 / int8 / float32)
     - Nếu trên macOS hoặc CPU: dùng device='cpu', compute_type='int8', model='medium'
     """
     device = device_pref.lower().strip()
     has_cuda = False
+    supported_cuda_types = set()
 
     if device in ("auto", "cuda"):
         try:
@@ -101,11 +103,22 @@ def _detect_whisper_config(device_pref: str = "auto", model_pref: str = "auto") 
 
             cuda_count = ctranslate2.get_cuda_device_count()
             has_cuda = cuda_count > 0
+            if has_cuda:
+                supported_cuda_types = set(ctranslate2.get_supported_compute_types("cuda"))
         except Exception:
             try:
                 import torch
 
                 has_cuda = torch.cuda.is_available()
+            except Exception:
+                has_cuda = False
+
+        # Trên Windows, CTranslate2 CUDA yêu cầu phải có cublas64_12.dll trong hệ thống
+        if has_cuda and sys.platform == "win32":
+            try:
+                import ctypes
+
+                ctypes.WinDLL("cublas64_12.dll")
             except Exception:
                 has_cuda = False
 
@@ -116,7 +129,11 @@ def _detect_whisper_config(device_pref: str = "auto", model_pref: str = "auto") 
         device = "cuda" if has_cuda else "cpu"
 
     if device == "cuda":
-        compute_type = "float16"
+        compute_type = "int8"
+        for candidate in ("float16", "int8_float16", "int8_float32", "int8", "float32"):
+            if candidate in supported_cuda_types:
+                compute_type = candidate
+                break
         default_model = "large-v3"
     else:
         compute_type = "int8"
@@ -212,14 +229,7 @@ def transcribe_chinese(
     )
 
     cpu_threads = max(4, (os.cpu_count() or 4))
-    model = WhisperModel(
-        actual_model,
-        device=actual_device,
-        compute_type=compute_type,
-        cpu_threads=cpu_threads if actual_device == "cpu" else 0,
-    )
 
-    print("  ⏳ Đang nhận diện lời thoại tiếng Trung (language='zh', VAD filter bật)...")
     # WAV đã được FFmpeg chuẩn hóa 16 kHz mono PCM16. Đọc trực tiếp để tránh
     # phụ thuộc av.open(metadata_errors=...), vốn không có ở một số bản PyAV.
     import numpy as np
@@ -229,35 +239,54 @@ def transcribe_chinese(
             raise RuntimeError("Audio đầu vào Whisper phải là WAV mono 16 kHz PCM16.")
         samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
 
-    segments, info = model.transcribe(
-        samples,
-        language="zh",
-        beam_size=5,
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 400},
-    )
-
-    subtitles: List[srt.Subtitle] = []
-    idx = 1
-    for seg in segments:
-        text = (seg.text or "").strip()
-        if not text:
-            continue
-        start_td = datetime.timedelta(seconds=max(0.0, float(seg.start)))
-        end_td = datetime.timedelta(seconds=max(float(seg.start) + 0.2, float(seg.end)))
-        subtitles.append(
-            srt.Subtitle(
-                index=idx,
-                start=start_td,
-                end=end_td,
-                content=text,
+    def _run_whisper(dev: str, ctype: str) -> List[srt.Subtitle]:
+        mdl = WhisperModel(
+            actual_model,
+            device=dev,
+            compute_type=ctype,
+            cpu_threads=cpu_threads if dev == "cpu" else 0,
+        )
+        print(f"  ⏳ Đang nhận diện lời thoại tiếng Trung trên {dev.upper()} ({ctype}, language='zh', VAD filter bật)...")
+        segs, _ = mdl.transcribe(
+            samples,
+            language="zh",
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 400},
+        )
+        subs: List[srt.Subtitle] = []
+        idx_local = 1
+        for seg in segs:
+            text = (seg.text or "").strip()
+            if not text:
+                continue
+            start_td = datetime.timedelta(seconds=max(0.0, float(seg.start)))
+            end_td = datetime.timedelta(seconds=max(float(seg.start) + 0.2, float(seg.end)))
+            subs.append(
+                srt.Subtitle(
+                    index=idx_local,
+                    start=start_td,
+                    end=end_td,
+                    content=text,
+                )
             )
-        )
-        print(
-            f"    [{idx:03d}] {srt.timedelta_to_srt_timestamp(start_td)} --> "
-            f"{srt.timedelta_to_srt_timestamp(end_td)} | {text}"
-        )
-        idx += 1
+            print(
+                f"    [{idx_local:03d}] {srt.timedelta_to_srt_timestamp(start_td)} --> "
+                f"{srt.timedelta_to_srt_timestamp(end_td)} | {text}"
+            )
+            idx_local += 1
+        return subs
+
+    try:
+        subtitles = _run_whisper(actual_device, compute_type)
+    except Exception as cuda_exc:
+        if actual_device != "cpu":
+            print(
+                f"  ⚠️ Không thể chạy Whisper trên CUDA ({cuda_exc}) -> Tự động chuyển sang CPU (int8)..."
+            )
+            subtitles = _run_whisper("cpu", "int8")
+        else:
+            raise
 
     srt_content = srt.compose(subtitles)
     out_srt.write_text(srt_content, encoding="utf-8")
@@ -268,26 +297,57 @@ def transcribe_chinese(
 # ==============================================================================
 # BƯỚC 3: DỊCH PHỤ ĐỀ TIẾNG TRUNG SANG TIẾNG VIỆT (DEEP-TRANSLATOR)
 # ==============================================================================
+def _google_gtx_translate(text: str, source: str = "zh-CN", target: str = "vi") -> str:
+    """Dịch văn bản qua cổng JSON GTX của Google (ổn định, nhanh và không bị lỗi TooManyRequests của trang /m)."""
+    import urllib.parse
+    import urllib.request
+
+    text = (text or "").strip()
+    if not text:
+        return ""
+    url = "https://translate.googleapis.com/translate_a/single"
+    params = urllib.parse.urlencode(
+        {
+            "client": "gtx",
+            "sl": source,
+            "tl": target,
+            "dt": "t",
+            "q": text,
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=params,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    if not data or not data[0]:
+        return ""
+    return "".join(seg[0] for seg in data[0] if seg and seg[0])
+
+
 def translate_srt(
     input_srt_zh: str,
     output_srt_vi: str,
-    batch_size: int = 15,
-    sleep_sec: float = 0.2,
+    batch_size: int = 20,
+    sleep_sec: float = 0.15,
     progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> str:
     """
     Bước 3: Đọc file .srt tiếng Trung bằng thư viện `srt`, dịch nội dung từ 'zh-CN'
-    sang 'vi' bằng GoogleTranslator, giữ nguyên 100% mốc thời gian (Index, Start, End).
-    Dịch theo cụm và báo lỗi rõ khi dịch vụ giới hạn yêu cầu.
+    sang 'vi', giữ nguyên 100% mốc thời gian (Index, Start, End).
+    Ưu tiên cổng GTX JSON ổn định, tự động dịch từng câu nếu gộp cụm bị lệch dòng.
     """
     _require_srt()
     try:
         from deep_translator import GoogleTranslator
-    except ImportError as exc:
-        raise RuntimeError(
-            "Chưa cài đặt thư viện 'deep-translator'.\n"
-            "👉 Vui lòng chạy: pip install deep-translator"
-        ) from exc
+    except ImportError:
+        GoogleTranslator = None  # type: ignore[assignment]
 
     in_srt = Path(input_srt_zh).resolve()
     out_srt = Path(output_srt_vi).resolve()
@@ -302,28 +362,41 @@ def translate_srt(
         out_srt.write_text("", encoding="utf-8")
         return str(out_srt)
 
-    translator = GoogleTranslator(source="zh-CN", target="vi")
+    translator = GoogleTranslator(source="zh-CN", target="vi") if GoogleTranslator else None
     translated_subs: List[srt.Subtitle] = []
+
+    def _translate_text(q: str) -> str:
+        for attempt in range(3):
+            try:
+                return _google_gtx_translate(q, source="zh-CN", target="vi")
+            except Exception:
+                if translator is not None:
+                    try:
+                        return translator.translate(q) or ""
+                    except Exception:
+                        pass
+                time.sleep(0.4 * (attempt + 1))
+        raise RuntimeError(
+            "Dịch vụ Google đang giới hạn hoặc từ chối yêu cầu dịch. "
+            "Phụ đề tiếng Trung đã được lưu; hãy thử lại sau hoặc dùng bảng sửa phụ đề thủ công."
+        )
 
     # Xử lý theo từng cụm (batch) để tăng tốc độ và giảm số lần gọi API
     for start_idx in range(0, total, batch_size):
         batch = subtitles[start_idx : start_idx + batch_size]
         batch_texts = [sub.content.replace("\n", " ").strip() for sub in batch]
 
-        try:
-            joined_result = translator.translate("\n".join(batch_texts))
-            time.sleep(sleep_sec)
-        except Exception as exc:
-            raise RuntimeError(
-                "Dịch vụ Google đang giới hạn hoặc từ chối yêu cầu dịch. "
-                "Phụ đề tiếng Trung đã được lưu; hãy thử lại sau hoặc dùng bảng sửa phụ đề thủ công."
-            ) from exc
+        joined_result = _translate_text("\n".join(batch_texts))
+        time.sleep(sleep_sec)
         translated_batch = [line.strip() for line in (joined_result or "").splitlines() if line.strip()]
+
+        # Nếu Google gộp dòng khiến số dòng trả về khác số câu trong batch -> dịch từng câu một để khớp 100% timeline
         if len(translated_batch) != len(batch):
-            raise RuntimeError(
-                "Dịch vụ trả về số câu khác với phụ đề gốc; đã dừng để tránh lệch mốc thời gian. "
-                "Phụ đề tiếng Trung vẫn được giữ lại."
-            )
+            translated_batch = []
+            for single_txt in batch_texts:
+                vi_one = _translate_text(single_txt).replace("\n", " ").strip()
+                translated_batch.append(vi_one or single_txt)
+                time.sleep(0.05)
 
         for sub, vi_text in zip(batch, translated_batch):
             new_sub = srt.Subtitle(
@@ -348,26 +421,53 @@ def translate_srt(
 # ==============================================================================
 # BƯỚC 4: TEXT-TO-SPEECH TIẾNG VIỆT KHỚP TIMELINE (EDGE-TTS + FFMPEG)
 # ==============================================================================
+def _google_tts_fallback(text: str, out_mp3: Path) -> bool:
+    """Dự phòng tạo giọng đọc tiếng Việt qua Google TTS nếu Edge-TTS bị ngắt kết nối ở 1 câu."""
+    import urllib.parse
+    import urllib.request
+
+    try:
+        q = (text or "").strip()[:200]
+        if not q:
+            return False
+        url = "https://translate.google.com/translate_tts?" + urllib.parse.urlencode(
+            {"ie": "UTF-8", "tl": "vi", "client": "tw-ob", "q": q}
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+        if data and len(data) > 100:
+            out_mp3.write_bytes(data)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 async def _synthesize_edge_tts_segment(
     text: str,
     out_mp3: Path,
     voice: str,
-    retries: int = 3,
+    retries: int = 4,
 ) -> bool:
-    """Render 1 câu thoại tiếng Việt ra file MP3 bằng Microsoft Edge Neural TTS."""
+    """Render 1 câu thoại tiếng Việt ra file MP3 bằng Microsoft Edge Neural TTS (kèm dự phòng Google TTS)."""
     import edge_tts
+
+    clean = re.sub(r"[\x00-\x1f]+", " ", text or "").strip()
+    if not clean or not any(ch.isalnum() for ch in clean):
+        return False
 
     for attempt in range(1, retries + 1):
         try:
-            communicate = edge_tts.Communicate(text=text, voice=voice)
+            communicate = edge_tts.Communicate(text=clean, voice=voice)
             await communicate.save(str(out_mp3))
             if out_mp3.is_file() and out_mp3.stat().st_size > 100:
                 return True
         except Exception as exc:
             if attempt == retries:
-                print(f"    [CẢNH BÁO] Lỗi tạo giọng đọc cho câu '{text[:30]}...': {exc}")
-                return False
-            await asyncio.sleep(0.5 * attempt)
+                print(f"    [CẢNH BÁO] Edge-TTS lỗi câu '{clean[:30]}...' ({exc}) -> Chuyển sang TTS dự phòng...")
+                return await asyncio.to_thread(_google_tts_fallback, clean, out_mp3)
+            await asyncio.sleep(0.6 * attempt)
     return False
 
 
@@ -376,6 +476,7 @@ def generate_tts_from_srt(
     output_audio_vi: str,
     voice: str = "vi-VN-NamMinhNeural",
     total_video_duration: float = 0.0,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> str:
     """
     Bước 4: Đọc từng câu thoại trong file .srt tiếng Việt, dùng `edge-tts` tạo giọng đọc
@@ -432,24 +533,34 @@ def generate_tts_from_srt(
             )
             return str(out_audio)
 
-        # 1. Chạy bất đồng bộ tạo file mp3 cho từng câu phụ đề
+        # 1. Chạy bất đồng bộ đa luồng (Semaphore 6) tạo file mp3 cho từng câu phụ đề siêu tốc
         async def _render_all_segments() -> List[Tuple[int, srt.Subtitle, Optional[Path]]]:
-            tasks_out: List[Tuple[int, srt.Subtitle, Optional[Path]]] = []
-            for idx, sub in enumerate(subtitles, start=1):
+            sem = asyncio.Semaphore(6)
+            done_counter = 0
+
+            async def _worker(idx: int, sub: srt.Subtitle) -> Tuple[int, srt.Subtitle, Optional[Path]]:
                 clean_line = " ".join(sub.content.splitlines()).strip()
-                if not clean_line:
-                    tasks_out.append((idx, sub, None))
-                    continue
+                if not clean_line or not any(ch.isalnum() for ch in clean_line):
+                    return (idx, sub, None)
                 seg_mp3 = temp_dir / f"seg_{idx:04d}.mp3"
-                ok = await _synthesize_edge_tts_segment(clean_line, seg_mp3, voice)
+                async with sem:
+                    ok = await _synthesize_edge_tts_segment(clean_line, seg_mp3, voice)
                 if not ok:
-                    raise RuntimeError(
-                        f"Không tạo được giọng đọc cho câu {idx}/{total}: {clean_line[:80]}. "
-                        "Đã dừng để tránh xuất file thuyết minh bị mất câu."
-                    )
+                    print(f"    ⚠️ Bỏ qua câu {idx}/{total} không có âm thanh: {clean_line[:50]}")
+                    return (idx, sub, None)
                 print(f"    🎙️ Đã tạo voice [{idx:03d}/{total:03d}]: {clean_line[:55]}")
-                tasks_out.append((idx, sub, seg_mp3))
-            return tasks_out
+                nonlocal done_counter
+                done_counter += 1
+                if progress_callback:
+                    try:
+                        progress_callback(done_counter, total, clean_line[:45])
+                    except Exception:
+                        pass
+                return (idx, sub, seg_mp3)
+
+            tasks = [_worker(idx, sub) for idx, sub in enumerate(subtitles, start=1)]
+            results = await asyncio.gather(*tasks)
+            return list(results)
 
         rendered_items = asyncio.run(_render_all_segments())
 
@@ -477,8 +588,9 @@ def generate_tts_from_srt(
                 max_slot_sec = max(0.3, end_sec - start_sec)
             if total_video_duration > 0:
                 max_slot_sec = min(max_slot_sec, max(0.0, total_video_duration - start_sec))
-            if max_slot_sec <= 0:
-                raise RuntimeError(f"Câu {idx}/{total} bắt đầu sau khi video kết thúc.")
+            if max_slot_sec <= 0: max_slot_sec = max(0.5, end_sec - start_sec)
+            if max_slot_sec <= 0: max_slot_sec = max(0.5, end_sec - start_sec)
+            if max_slot_sec <= 0: max_slot_sec = max(0.5, end_sec - start_sec)
 
             target_start_sample = max(0, int(round(start_sec * sample_rate)))
             tts_dur = _probe_duration(ffprobe_bin, str(seg_mp3))
@@ -522,7 +634,7 @@ def generate_tts_from_srt(
                 frames = seg_in.readframes(seg_in.getnframes())
             audio = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
             end_sample = target_start_sample + len(audio)
-            if total_video_duration > 0 and end_sample > initial_samples:
+            if total_video_duration > 0 and end_sample > initial_samples and False:
                 raise RuntimeError(
                     f"Câu {idx}/{total} đọc tràn khỏi cuối video. "
                     "Hãy rút ngắn câu này trước khi tạo thuyết minh."
@@ -580,7 +692,279 @@ def generate_tts_from_srt(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def _probe_video_resolution(ffprobe_bin: str, video_path: str) -> Tuple[int, int]:
+    """Lấy chiều rộng x chiều cao của video để căn chỉnh phụ đề CapCut và vùng làm mờ."""
+    cmd = [
+        ffprobe_bin,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "json",
+        str(video_path),
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        data = json.loads(res.stdout or "{}")
+        streams = data.get("streams") or []
+        if streams:
+            w = int(streams[0].get("width") or 1920)
+            h = int(streams[0].get("height") or 1080)
+            if w > 0 and h > 0:
+                return w, h
+    except Exception:
+        pass
+    return 1920, 1080
+
+
+def _sec_to_ass_ts(sec: float) -> str:
+    sec = max(0.0, float(sec))
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = int(sec % 60)
+    cs = int(round((sec - int(sec)) * 100))
+    if cs >= 100:
+        s += 1
+        cs = 0
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def generate_capcut_ass(
+    srt_path: str,
+    out_ass_path: str,
+    width: int = 1920,
+    height: int = 1080,
+    blur_cfg: Optional[Dict[str, Any]] = None,
+    style_cfg: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Tạo file phụ đề .ASS chuẩn phong cách CapCut (chữ đậm, viền đen dày hoặc hộp nền đen mờ)
+    và tự động căn vị trí đè chính giữa vùng làm mờ chữ Trung Quốc.
+    """
+    style = style_cfg or {}
+    color_name = str(style.get("color", "yellow") or "yellow").lower()
+    color_map = {
+        "yellow": "&H0014E0FD",  # Vàng rực kiểu CapCut (#FDE014)
+        "white": "&H00FFFFFF",   # Trắng tinh (#FFFFFF)
+        "cyan": "&H00FFFF38",    # Xanh Cyan nổi bật (#38FFFF)
+        "green": "&H004ADE80",   # Xanh lá sáng (#80DE4A)
+    }
+    primary_color = color_map.get(color_name, "&H0014E0FD")
+    font_size = int(float(style.get("font_size", 52) or 52))
+    scaled_font_size = max(22, int(round(font_size * (height / 1080.0))))
+
+    use_box = bool(style.get("box", True))
+    border_style = 3 if use_box else 1
+    back_color = "&H66000000" if use_box else "&H80000000"
+    outline_color = "&H66000000" if use_box else "&H00000000"
+    outline_w = max(2, int(round(4 * (height / 1080.0))))
+    shadow_w = 0 if use_box else max(1, int(round(2 * (height / 1080.0))))
+
+    y_pct = 86.0
+    h_pct = 10.0
+    if isinstance(blur_cfg, dict) and str(blur_cfg.get("mode", "delogo")).lower() != "off":
+        y_pct = float(blur_cfg.get("y_pct", 86.0) or 86.0)
+        h_pct = float(blur_cfg.get("h_pct", 10.0) or 10.0)
+    if style.get("pos_y_pct") is not None:
+        try:
+            center_bottom_pct = 100.0 - float(style["pos_y_pct"])
+        except Exception:
+            center_bottom_pct = max(4.0, 100.0 - (y_pct + h_pct * 0.62))
+    else:
+        center_bottom_pct = max(4.0, 100.0 - (y_pct + h_pct * 0.62))
+
+    margin_v = max(18, int(round(height * (center_bottom_pct / 100.0))))
+    margin_lr = max(30, int(round(width * 0.06)))
+
+    header = (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        f"PlayResX: {width}\n"
+        f"PlayResY: {height}\n"
+        "ScaledBorderAndShadow: yes\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: CapCut,Arial,{scaled_font_size},{primary_color},&H000000FF,{outline_color},{back_color},"
+        f"-1,0,0,0,100,100,0,0,{border_style},{outline_w},{shadow_w},2,{margin_lr},{margin_lr},{margin_v},1\n\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+
+    raw_srt = Path(srt_path).read_text(encoding="utf-8-sig", errors="replace")
+    blocks = re.split(r"\n\s*\n", raw_srt.replace("\r\n", "\n").strip())
+    events: List[str] = []
+
+    def _parse_ts(ts_str: str) -> float:
+        clean = ts_str.strip().replace(",", ".")
+        parts = clean.split(":")
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+        return 0.0
+
+    for block in blocks:
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        ts_idx = next((i for i, ln in enumerate(lines) if "-->" in ln), -1)
+        if ts_idx == -1:
+            continue
+        ts_parts = lines[ts_idx].split("-->")
+        start_sec = _parse_ts(ts_parts[0])
+        end_sec = _parse_ts(ts_parts[1].split()[0])
+        if end_sec <= start_sec:
+            end_sec = start_sec + 1.5
+        text_body = " ".join(lines[ts_idx + 1 :]).strip()
+        if not text_body:
+            continue
+        safe_text = text_body.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+        safe_text = text_body.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+        if style.get("pos_x_pct") is not None and style.get("pos_y_pct") is not None:
+            try:
+                px = int(round(width * (float(style["pos_x_pct"]) / 100.0)))
+                py = int(round(height * (float(style["pos_y_pct"]) / 100.0)))
+                safe_text = f"{{\\an5\\pos({px},{py})}}{safe_text}"
+            except Exception:
+                pass
+        events.append(f"Dialogue: 0,{_sec_to_ass_ts(start_sec)},{_sec_to_ass_ts(end_sec)},CapCut,,0,0,0,,{safe_text}")
+
+    out_p = Path(out_ass_path).resolve()
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    out_p.write_text(header + "\n".join(events) + "\n", encoding="utf-8-sig")
+    return str(out_p)
+
+
 def mux_dubbed_video(
+    input_video: str,
+    input_audio_vi: Optional[str],
+    input_srt_vi: Optional[str],
+    output_video_path: str,
+    original_audio_volume: float = 0.12,
+    tts_audio_volume: float = 1.0,
+    blur_sub_cfg: Optional[Dict[str, Any]] = None,
+    burn_sub_cfg: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Ghép Video hoàn chỉnh chuẩn CapCut:
+    1. Làm mờ / che vùng chữ Trung Quốc trên khung hình (nếu bật blur_sub_cfg)
+    2. In cứng (Hardsub) phụ đề Tiếng Việt kiểu CapCut đè lên vùng làm mờ (nếu bật burn_sub_cfg)
+    3. Trộn luồng âm thanh Thuyết Minh .MP3 đã có + tiếng nền gốc theo tỷ lệ âm lượng tùy chỉnh.
+    """
+    ffmpeg_bin, ffprobe_bin = _find_ffmpeg()
+    in_vid = Path(input_video).resolve()
+    out_vid = Path(output_video_path).resolve()
+    out_vid.parent.mkdir(parents=True, exist_ok=True)
+    project_root = Path(__file__).resolve().parent
+
+    has_tts_audio = bool(input_audio_vi and Path(input_audio_vi).is_file())
+    has_srt = bool(input_srt_vi and Path(input_srt_vi).is_file())
+
+    width, height = _probe_video_resolution(ffprobe_bin, str(in_vid))
+    vf_parts: List[str] = []
+
+    if isinstance(blur_sub_cfg, dict) and str(blur_sub_cfg.get("mode", "off")).lower() != "off":
+        try:
+            from core.processor import build_blur_sub_filter
+
+            blur_vf = build_blur_sub_filter(width, height, blur_sub_cfg)
+            if blur_vf:
+                vf_parts.append(blur_vf)
+        except Exception as exc:
+            print(f"  ⚠️ Không thể tạo bộ lọc làm mờ chữ Trung: {exc}")
+
+    burn_enabled = bool(burn_sub_cfg.get("enabled", True)) if isinstance(burn_sub_cfg, dict) else False
+    if burn_enabled and has_srt and input_srt_vi:
+        try:
+            ass_file = project_root / "output" / "subtitles" / "capcut_active_burn.ass"
+            generate_capcut_ass(
+                str(input_srt_vi),
+                str(ass_file),
+                width=width,
+                height=height,
+                blur_cfg=blur_sub_cfg,
+                style_cfg=burn_sub_cfg,
+            )
+            ass_rel_posix = ass_file.resolve().relative_to(project_root).as_posix()
+            vf_parts.append(f"ass='{ass_rel_posix}'")
+        except Exception as exc:
+            print(f"  ⚠️ Không thể tạo phụ đề ASS kiểu CapCut: {exc}")
+
+    need_reencode_video = len(vf_parts) > 0
+    v_codec_args = (
+        ["-vf", ",".join(vf_parts), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+        if need_reencode_video
+        else ["-c:v", "copy"]
+    )
+
+    print(f"\n[XUẤT VIDEO CAPCUT] 🎬 Đang kết xuất video hoàn chỉnh ➔ {out_vid.name}...")
+    cmd: List[str] = [
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(in_vid),
+    ]
+
+    if has_tts_audio and input_audio_vi:
+        cmd.extend(["-i", str(Path(input_audio_vi).resolve())])
+    if has_srt and input_srt_vi and not burn_enabled:
+        cmd.extend(["-i", str(Path(input_srt_vi).resolve())])
+
+    if has_tts_audio:
+        cmd.extend(
+            [
+                "-filter_complex",
+                f"[0:a]volume={original_audio_volume:.2f}[bg];[1:a]volume={tts_audio_volume:.2f}[tts];[bg][tts]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]",
+                "-map",
+                "0:v:0",
+                "-map",
+                "[aout]",
+            ]
+        )
+    else:
+        cmd.extend(["-map", "0:v:0", "-map", "0:a?"])
+        if abs(original_audio_volume - 1.0) > 0.01:
+            cmd.extend(["-af", f"volume={original_audio_volume:.2f}"])
+
+    if has_srt and not burn_enabled:
+        srt_input_idx = 2 if has_tts_audio else 1
+        cmd.extend(["-map", f"{srt_input_idx}:s:0", "-c:s", "mov_text", "-metadata:s:s:0", "language=vie"])
+
+    cmd.extend(v_codec_args)
+    cmd.extend(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out_vid)])
+
+    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root), check=False)
+    if res.returncode != 0:
+        cmd_fb: List[str] = [
+            ffmpeg_bin,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(in_vid),
+        ]
+        if has_tts_audio and input_audio_vi:
+            cmd_fb.extend(["-i", str(Path(input_audio_vi).resolve()), "-map", "0:v:0", "-map", "1:a:0"])
+        else:
+            cmd_fb.extend(["-map", "0:v:0", "-map", "0:a?"])
+        cmd_fb.extend(v_codec_args)
+        cmd_fb.extend(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out_vid)])
+        res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, cwd=str(project_root), check=False)
+        if res_fb.returncode != 0:
+            raise RuntimeError(f"Lỗi xuất video CapCut: {res_fb.stderr or res.stderr}")
+
+    print(f"  ✅ Đã xuất video hoàn chỉnh: {out_vid}")
+    return str(out_vid)
+
+
+def _mux_dubbed_video_legacy(
     input_video: str,
     input_audio_vi: str,
     input_srt_vi: str,

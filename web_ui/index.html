@@ -925,12 +925,69 @@
 
         <div class="form-group">
           <label>🔥 Cấp Độ Chống Quét Bản Quyền YouTube (Content ID Bypass):</label>
-          <select id="antiCopyrightLevel" class="form-input" style="border-color: #ef4444; background: #1a1225;" onchange="saveSettingsToServer()">
+          <select id="antiCopyrightLevel" class="form-input" style="border-color: #ef4444; background: #1a1225;" onchange="onAntiCopyrightLevelChange()">
             <option value="hardcore" selected>🔴 Cấp 3: HARDCORE YOUTUBE BYPASS (Cắt lệch tâm + Xoay vi mô + Hạt Film + Phá sóng Audio EQ + Tốc độ 1.04x)</option>
             <option value="medium">🟡 Cấp 2: Nâng Cao (Cắt lệch tâm 3.5% + Đổi màu RGB + Lọc EQ âm thanh + Tốc độ 1.03x)</option>
             <option value="basic">🟢 Cấp 1: Cơ Bản (Zoom viền 2% + Chỉnh màu tươi + Giữ nguyên tốc độ 1.0x)</option>
             <option value="off">⚪ Tắt Lách Bản Quyền (Chỉ cắt & chuẩn hóa 1080p)</option>
           </select>
+        </div>
+
+        <!-- Bảng tùy chỉnh chi tiết các thông số Lách Bản Quyền ở Bước 3 -->
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #334155; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+          <div style="font-size: 13px; font-weight: 800; color: #38bdf8; margin-bottom: 10px;">
+            🎛️ Tùy Chỉnh Thông Số Lách Bản Quyền Chi Tiết (Để 1.0 nếu muốn giữ nguyên tốc độ / giọng gốc):
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>⏩ Tốc độ Video & Tiếng (Speed):</label>
+              <input type="number" id="acSpeedInput" class="form-input" step="0.01" min="0.80" max="1.50" value="1.04" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>🎵 Đổi tông giọng (Pitch, 1.0 = Gốc):</label>
+              <input type="number" id="acPitchInput" class="form-input" step="0.01" min="0.85" max="1.20" value="1.00" onchange="saveSettingsToServer()" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>🔍 Phóng to cắt viền (Zoom):</label>
+              <input type="number" id="acZoomInput" class="form-input" step="0.005" min="1.00" max="1.25" value="1.045" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>☀️ Độ tương phản màu (Contrast):</label>
+              <input type="number" id="acContrastInput" class="form-input" step="0.01" min="0.80" max="1.30" value="1.05" onchange="saveSettingsToServer()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Bảng Làm Mờ / Che Chữ Trung Quốc Trong Video (Hardsub Blur / Delogo) -->
+        <div style="background: rgba(30, 27, 75, 0.55); border: 1px solid #6366f1; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+          <div style="font-size: 13px; font-weight: 800; color: #a5b4fc; margin-bottom: 8px;">
+            🌫️ Làm Mờ / Xóa Chữ Phụ Đề Trung Quốc Trong Video (Có khung canh trực tiếp trên màn hình Xem Trước):
+          </div>
+          <div class="form-group" style="margin-bottom: 8px;">
+            <label>Kiểu làm mờ chữ Trung Quốc:</label>
+            <select id="blurSubModeSelect" class="form-input" onchange="updateBlurZonePreview(); saveSettingsToServer()">
+              <option value="delogo" selected>✨ Xóa mờ hòa trộn nền tự nhiên (Delogo - Nhanh & Đẹp nhất)</option>
+              <option value="blur">🌫️ Làm mờ kính nhòe (Gaussian / Box Blur)</option>
+              <option value="blackbar">⬛ Phủ thanh nền đen mờ Cinema (Che kín để đè Sub Việt)</option>
+              <option value="off">⚪ Tắt (Giữ nguyên chữ Trung gốc)</option>
+            </select>
+          </div>
+          <div class="form-row" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>↕️ Vị trí đáy (%):</label>
+              <input type="number" id="blurSubYInput" class="form-input" step="1" min="50" max="96" value="86" oninput="updateBlurZonePreview()" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>📏 Độ cao mờ (%):</label>
+              <input type="number" id="blurSubHInput" class="form-input" step="1" min="4" max="30" value="10" oninput="updateBlurZonePreview()" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>↔️ Độ rộng (%):</label>
+              <input type="number" id="blurSubWInput" class="form-input" step="1" min="30" max="98" value="82" oninput="updateBlurZonePreview()" onchange="saveSettingsToServer()" />
+            </div>
+          </div>
         </div>
 
         <div class="toggle-box">
@@ -1034,6 +1091,104 @@
       <div id="srtTargetLabel" style="margin: 0 0 12px; padding: 10px 14px; border: 1px solid #475569; border-radius: 10px; color: #cbd5e1; font-size: 13px;">
         🎬 Chưa có video từ Bước 3. Hãy xuất video trước, hoặc chọn file video trên máy.
       </div>
+
+      <!-- TRÌNH XEM TRƯỚC VIDEO & ĐỐI CHIẾU PHỤ ĐỀ TRỰC TIẾP (VIDEO PREVIEW STUDIO) -->
+      <div style="background: #0b1120; border: 1px solid #334155; border-radius: 14px; padding: 14px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
+            <span style="font-weight: 800; font-size: 14px; color: #38bdf8;">📺 Xem Trước Video & Kiểm Tra Khớp Tiếng / Phụ Đề:</span>
+            <select id="previewVideoSelect" class="form-input" style="max-width: 440px;" onchange="onSelectPreviewVideo(this.value)">
+              <option value="">-- Chọn video đã xuất để xem trước --</option>
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 12px; color: var(--muted);">Tốc độ xem:</span>
+            <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(1.0)">1.0x</button>
+            <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(1.25)">1.25x</button>
+            <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(1.5)">1.5x</button>
+            <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(2.0)">2.0x</button>
+            <button class="btn btn-purple" id="blurNowBtn" style="padding: 6px 12px; font-size: 12px;" onclick="blurCurrentPreviewVideoNow()">🌫️ Làm Mờ Chữ Trung Cho Video Này Ngay</button>
+            <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="openOutputFolder()">📂 Mở Thư Mục output/</button>
+          </div>
+        </div>
+
+        <div id="previewPlayerWrap" style="position: relative; width: 100%; max-width: 900px; margin: 0 auto; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #1e293b;">
+          <video
+            id="previewVideoPlayer"
+            controls
+            preload="metadata"
+            style="width: 100%; max-height: 460px; display: block; background: #000;"
+            ontimeupdate="onPreviewTimeUpdate()"
+            onplay="onPreviewPlaySync()"
+            onpause="onPreviewPauseSync()"
+            onseeking="onPreviewSeekSync()"
+          ></video>
+          <!-- Khung xem trước trực tiếp vùng làm mờ chữ Trung Quốc (Blur Zone Overlay) -->
+          <div
+            id="blurZoneOverlay"
+            onmousedown="startBlurBoxDrag(event, 'move')"
+            title="✋ Giữ chuột trái để KÉO DI CHUYỂN khung làm mờ chữ Trung Quốc"
+            style="position: absolute; left: 9%; width: 82%; top: 86%; height: 10%; border: 2px dashed rgba(99, 102, 241, 0.95); border-radius: 6px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: rgba(15, 23, 42, 0.28); cursor: move; user-select: none; z-index: 15; display: flex; align-items: center; justify-content: center; color: rgba(199, 210, 254, 0.95); font-size: 11.5px; font-weight: 800; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);"
+          >
+            <span style="pointer-events: none; text-shadow: 0 1px 3px #000;">✋ Kéo thả khung che chữ Trung (Kéo góc ↘️ để chỉnh to/nhỏ)</span>
+            <!-- Tay nắm kéo giãn kích thước (Resize Handle góc phải dưới) -->
+            <div
+              onmousedown="startBlurBoxDrag(event, 'resize-se')"
+              title="Kéo góc này để chỉnh Rộng / Cao khung làm mờ"
+              style="position: absolute; right: -6px; bottom: -6px; width: 18px; height: 18px; background: #6366f1; border: 2px solid #fff; border-radius: 4px; cursor: nwse-resize; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.6);"
+            >↘</div>
+            <!-- Tay nắm kéo giãn góc trái trên -->
+            <div
+              onmousedown="startBlurBoxDrag(event, 'resize-nw')"
+              title="Kéo góc này để chỉnh vị trí & kích thước"
+              style="position: absolute; left: -6px; top: -6px; width: 16px; height: 16px; background: #6366f1; border: 2px solid #fff; border-radius: 4px; cursor: nwse-resize;"
+            ></div>
+          </div>
+          <div style="display:none;"
+            style="position: absolute; left: 9%; width: 82%; top: 86%; height: 10%; border: 1.5px dashed rgba(99, 102, 241, 0.85); border-radius: 6px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: rgba(15, 23, 42, 0.22); pointer-events: none; display: flex; align-items: center; justify-content: center; color: rgba(165, 180, 252, 0.85); font-size: 11px; font-weight: 700;"
+          >
+            🌫️ Vùng làm mờ chữ Trung Quốc
+          </div>
+          <div
+            id="liveSubOverlay"
+            onmousedown="startSubBoxDrag(event)"
+            onwheel="onSubBoxWheel(event)"
+            title="✋ Giữ chuột trái để KÉO THẢ vị trí chữ Phụ đề Tiếng Việt (Lăn chuột để phóng to/thu nhỏ cỡ chữ)"
+            style="position: absolute; left: 50%; top: 91%; transform: translate(-50%, -50%); width: max-content; max-width: 92%; text-align: center; cursor: grab; user-select: none; z-index: 20; display: block;"
+          >
+            <div
+              id="liveSubViText"
+              style="display: inline-block; background: rgba(0, 0, 0, 0.82); color: #fde047; font-weight: 800; font-size: 18px; padding: 6px 16px; border-radius: 8px; border: 1.5px dashed rgba(253, 224, 71, 0.65); text-shadow: 0 2px 4px #000; margin-bottom: 3px;"
+            >✋ Kéo thả chữ Phụ Đề Tiếng Việt này tới vị trí bất kỳ (Lăn chuột chỉnh cỡ chữ)</div>
+            <br />
+            <div
+              id="liveSubZhText"
+              style="display: none; background: rgba(15, 23, 42, 0.78); color: #cbd5e1; font-size: 13px; padding: 2px 10px; border-radius: 6px; pointer-events: none;"
+            ></div>
+          </div>
+          <div style="display:none;"
+            style="position: absolute; left: 5%; right: 5%; bottom: 54px; text-align: center; pointer-events: none; display: none;"
+          >
+            <div
+              id="liveSubViText"
+              style="display: inline-block; background: rgba(0, 0, 0, 0.78); color: #fde047; font-weight: 800; font-size: 17px; padding: 5px 14px; border-radius: 8px; text-shadow: 0 2px 4px #000; margin-bottom: 4px;"
+              data-legacy-sub="1"
+            ></div>
+            <br />
+            <div
+              id="liveSubZhText"
+              style="display: inline-block; background: rgba(15, 23, 42, 0.78); color: #cbd5e1; font-size: 13px; padding: 2px 10px; border-radius: 6px;"
+            ></div>
+          </div>
+        </div>
+        <div style="text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 8px;">
+          <span>💡 <b>Mẹo Kéo Thả Như CapCut:</b> Dùng chuột <b>kéo trực tiếp Khung Mờ Chữ Trung</b> (hoặc kéo góc <b>↘️</b> để co giãn) và <b>kéo thả dòng Chữ Phụ Đề Tiếng Việt</b> ngay trên màn hình video! Lăn con lăn chuột trên chữ để phóng to/thu nhỏ.</span>
+          <button class="btn btn-outline" style="padding: 4px 10px; font-size: 11.5px;" onclick="resetCapcutOverlayPositions()">🎯 Đưa Khung Mờ & Chữ SRT Về Giữa Đáy</button>
+        </div>
+        <div style="display:none;">💡 Mẹo: Bấm nút <b>▶️</b> ở bất kỳ dòng phụ đề nào bên dưới để tua nhanh video tới đúng câu thoại đó!</div>
+        </div>
+      </div>
       <div class="form-group" style="max-width: 390px;">
         <label>🎙️ Mô hình nhận diện tiếng Trung:</label>
         <select id="whisperModelSelect" class="form-input" onchange="saveSettingsToServer()">
@@ -1101,7 +1256,125 @@
       <!-- Thanh tạo giọng đọc Thuyết minh từ bản Sub đã sửa -->
       <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); padding: 14px 18px; border-radius: 12px;">
         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-          <span style="font-weight: 800; font-size: 14.5px; color: #a7f3d0;">
+        <!-- BÀN DỰNG & XUẤT VIDEO HOÀN CHỈNH THAY THẾ CAPCUT (CAPCUT STUDIO) -->
+      <div style="margin-top: 18px; background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92)); border: 1.5px solid #6366f1; border-radius: 14px; padding: 18px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;">
+          <div style="font-weight: 900; font-size: 16px; color: #fde047; display: flex; align-items: center; gap: 8px;">
+            <span>🎬 BÀN DỰNG & XUẤT VIDEO THAY THẾ CAPCUT (MỜ CHỮ TRUNG + HARDSUB VIỆT + MP3 THUYẾT MINH)</span>
+          </div>
+          <label style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #6ee7b7; font-weight: 700; cursor: pointer;">
+            <input type="checkbox" id="syncMp3WithVideoCheck" checked style="width: 16px; height: 16px; accent-color: #10b981;" />
+            🔄 Phát thử đồng bộ file .MP3 thuyết minh khi bấm Play Video Xem Trước (Y hệt Timeline CapCut!)
+          </label>
+        </div>
+
+        <!-- KÊNH 1: QUẢN LÝ & NGHE THỬ FILE .MP3 THUYẾT MINH ĐÃ XUẤT -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 14px; margin-bottom: 14px;">
+          <div style="font-weight: 800; font-size: 13.5px; color: #6ee7b7; margin-bottom: 10px;">
+            🔊 Kênh 1 — Âm Thanh Thuyết Minh (.MP3): Dùng ngay file .MP3 đã xuất sẵn hoặc tạo mới từ bảng Sub
+          </div>
+          <div style="display: grid; grid-template-columns: 1.1fr 1.4fr; gap: 12px; align-items: center;">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <select id="ttsVoiceSelect" class="form-input" style="flex: 1; min-width: 210px;">
+                <option value="vi-VN-NamMinhNeural" selected>🎙️ Giọng Nam Trầm Ấm (NamMinh)</option>
+                <option value="vi-VN-HoaiMyNeural">🎙️ Giọng Nữ Truyền Cảm (HoaiMy)</option>
+              </select>
+              <button class="btn btn-primary" style="padding: 10px 16px; font-size: 13.5px; font-weight: 800; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);" id="ttsOnlyMp3Btn" onclick="generateOnlyMp3FromSrt()">
+                🔊 3A. TẠO FILE .MP3 THUYẾT MINH (XUẤT RIÊNG .MP3)
+              </button>
+              <button style="display:none;"
+                🔊 3A. Tạo / Cập Nhật File .MP3
+              </button>
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <span style="font-size: 12.5px; color: #cbd5e1; font-weight: 700;">File .MP3 đang dùng:</span>
+              <select id="capcutAudioSelect" class="form-input" style="flex: 1; min-width: 220px;" onchange="onSelectCapcutAudio(this.value)">
+                <option value="">-- Tự động lấy file .MP3 mới nhất --</option>
+              </select>
+              <button class="btn btn-outline" style="padding: 8px 11px; font-size: 12px;" onclick="pickExternalMp3File()">
+                📂 Chọn .MP3 Khác
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="font-size: 12px; color: var(--muted);">🎧 Nghe thử riêng file .MP3 thuyết minh:</span>
+            <audio id="ttsAudioPreviewPlayer" controls preload="metadata" style="height: 34px; flex: 1; max-width: 520px;"></audio>
+            <button class="btn btn-success" style="padding: 7px 13px; font-size: 12px;" onclick="downloadCurrentMp3File()">
+              ⬇️ Tải File .MP3 Này Về Máy
+            </button>
+            <button class="btn btn-outline" style="padding: 7px 12px; font-size: 12px;" onclick="openOutputFolder()">
+              📂 Mở Thư Mục Chứa .MP3
+            </button>
+          </div>
+        </div>
+
+        <!-- KÊNH 2: TÙY CHỈNH KIỂU CHỮ PHỤ ĐỀ CAPCUT & TRỘN ÂM LƯỢNG (AUDIO MIXER) -->
+        <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+            <span style="font-weight: 800; font-size: 13.5px; color: #a5b4fc;">
+              🎨 Kênh 2 — Trang Trí Phụ Đề Tiếng Việt Kiểu CapCut & Bàn Trộn Âm Thanh (Audio Mixer)
+            </span>
+            <label style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #fde047; font-weight: 800; cursor: pointer;">
+              <input type="checkbox" id="capcutBurnSubCheck" checked onchange="updateCapcutSubPreviewStyle()" style="width: 16px; height: 16px; accent-color: #eab308;" />
+              ✅ In cứng Phụ đề Tiếng Việt lên Video (Đè chính giữa vùng làm mờ chữ Trung Quốc)
+            </label>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 12px;">🎨 Màu chữ phụ đề CapCut:</label>
+              <select id="capcutSubColorSelect" class="form-input" onchange="updateCapcutSubPreviewStyle()">
+                <option value="yellow" selected>🌟 Vàng Rực CapCut (Khuyên dùng)</option>
+                <option value="white">⚪ Trắng Tinh Viền Đen</option>
+                <option value="cyan">💎 Xanh Cyan Nổi Bật</option>
+                <option value="green">🍀 Xanh Lá Sáng</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 12px;">🔠 Cỡ chữ (Chuẩn 1080p: 52):</label>
+              <input type="number" id="capcutSubSizeInput" class="form-input" value="52" min="24" max="96" step="2" oninput="updateCapcutSubPreviewStyle()" />
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 12px;">🗣️ Âm lượng Thuyết Minh (.MP3):</label>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" id="capcutTtsVolInput" min="0.2" max="2.0" step="0.05" value="1.0" style="flex: 1;" oninput="onMixerVolumeChange()" />
+                <span id="capcutTtsVolLabel" style="font-size: 12.5px; font-weight: 800; color: #6ee7b7; min-width: 44px;">100%</span>
+              </div>
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 12px;">🎵 Âm lượng Tiếng Gốc / Nhạc nền:</label>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" id="capcutOrigVolInput" min="0.0" max="1.0" step="0.02" value="0.12" style="flex: 1;" oninput="onMixerVolumeChange()" />
+                <span id="capcutOrigVolLabel" style="font-size: 12.5px; font-weight: 800; color: #38bdf8; min-width: 44px;">12%</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #cbd5e1; cursor: pointer;">
+              <input type="checkbox" id="capcutSubBoxCheck" checked onchange="updateCapcutSubPreviewStyle()" />
+              ⬛ Bọc hộp nền đen mờ sau chữ (Giúp chữ Tiếng Việt nổi bật hoàn toàn trên vùng chữ Trung đã làm mờ)
+            </label>
+            <span style="font-size: 12px; color: var(--muted);">
+              💡 Chế độ làm mờ chữ Trung đang lấy từ Bước 3 (Hộp 🌫️ Làm Mờ Chữ Trung Quốc).
+            </span>
+          </div>
+        </div>
+
+        <!-- NÚT XUẤT VIDEO HOÀN CHỈNH KIỂU CAPCUT -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="font-size: 12.5px; color: #cbd5e1;">
+            ⚡ <b>Đã có sẵn file .MP3 thuyết minh?</b> Bấm nút bên phải để ghép ngay <b>Video + Xóa mờ chữ Trung + Hardsub Việt + MP3</b> (không cần chờ đọc lại giọng AI)!
+          </div>
+          <button class="btn btn-success" style="padding: 14px 26px; font-size: 15.5px; font-weight: 900; box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);" id="capcutExportBtn" onclick="exportCapcutVideoNow()">
+            🎬 3B. XUẤT VIDEO ĐÃ CHỈNH KIỂU CAPCUT (RA FILE .MP4 NGAY)
+          </button>
+        </div>
+      </div>
+      <div style="display:none;">
+        <span style="font-weight: 800; font-size: 14.5px; color: #a7f3d0;">
             🗣️ Bước Cuối: Đọc Thuyết Minh AI Theo Đúng Bản Sub Bạn Đã Sửa:
           </span>
           <select id="ttsVoiceSelect" class="form-input" style="width: 290px;">
@@ -1112,6 +1385,9 @@
 
         <button class="btn btn-success" style="padding: 12px 22px; font-size: 15px;" id="ttsRenderBtn" onclick="renderTtsFromEditedSrt()">
           🚀 3. TẠO FILE THUYẾT MINH (.MP3) & GHÉP VÀO VIDEO
+        </button>
+      </div>
+      </div>
         </button>
       </div>
     </div>
@@ -1143,18 +1419,406 @@
     let selectedChunkSet = new Set();
     let srtRowsData = [];
     let srtTargetPath = "";
+    let currentPreviewLoadedPath = "";
     let lastBatchEnd = 10;
+
+    function parseSrtTimeToSec(tsStr) {
+      if (!tsStr) return 0;
+      const clean = String(tsStr).trim().replace(",", ".");
+      const parts = clean.split(":");
+      if (parts.length === 3) {
+        return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+      } else if (parts.length === 2) {
+        return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+      }
+      return parseFloat(clean) || 0;
+    }
+
+    function setPreviewPlaybackRate(rate) {
+      const player = document.getElementById("previewVideoPlayer");
+      if (player) player.playbackRate = rate;
+    }
+
+    let customBlurXPct = null; // null = tự căn giữa ngang
+    let customSubPosXPct = 50.0; // % tâm ngang của chữ phụ đề Tiếng Việt
+    let customSubPosYPct = null; // null = tự bám chính giữa khung làm mờ chữ Trung
+
+    function startBlurBoxDrag(e, actionType) {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = document.getElementById("previewPlayerWrap");
+      const box = document.getElementById("blurZoneOverlay");
+      if (!wrap || !box) return;
+
+      const wrapRect = wrap.getBoundingClientRect();
+      const startMouseX = e.clientX;
+      const startMouseY = e.clientY;
+
+      const startY = parseFloat(document.getElementById("blurSubYInput")?.value || "86");
+      const startH = parseFloat(document.getElementById("blurSubHInput")?.value || "10");
+      const startW = parseFloat(document.getElementById("blurSubWInput")?.value || "82");
+      const startX = customBlurXPct !== null ? customBlurXPct : (100 - startW) / 2;
+
+      function onMove(ev) {
+        const dxPct = ((ev.clientX - startMouseX) / Math.max(1, wrapRect.width)) * 100;
+        const dyPct = ((ev.clientY - startMouseY) / Math.max(1, wrapRect.height)) * 100;
+
+        if (actionType === "move") {
+          const newW = parseFloat(document.getElementById("blurSubWInput")?.value || String(startW));
+          const newH = parseFloat(document.getElementById("blurSubHInput")?.value || String(startH));
+          customBlurXPct = Math.round(Math.min(99 - newW, Math.max(1, startX + dxPct)) * 10) / 10;
+          const newY = Math.round(Math.min(98 - newH, Math.max(2, startY + dyPct)) * 10) / 10;
+          const yInp = document.getElementById("blurSubYInput");
+          if (yInp) yInp.value = newY;
+        } else if (actionType === "resize-se") {
+          const newW = Math.round(Math.min(98 - startX, Math.max(12, startW + dxPct)) * 10) / 10;
+          const newH = Math.round(Math.min(98 - startY, Math.max(4, startH + dyPct)) * 10) / 10;
+          customBlurXPct = Math.round(startX * 10) / 10;
+          const wInp = document.getElementById("blurSubWInput");
+          const hInp = document.getElementById("blurSubHInput");
+          if (wInp) wInp.value = newW;
+          if (hInp) hInp.value = newH;
+        } else if (actionType === "resize-nw") {
+          const newX = Math.round(Math.min(startX + startW - 12, Math.max(1, startX + dxPct)) * 10) / 10;
+          const newY = Math.round(Math.min(startY + startH - 4, Math.max(2, startY + dyPct)) * 10) / 10;
+          const newW = Math.round((startW - (newX - startX)) * 10) / 10;
+          const newH = Math.round((startH - (newY - startY)) * 10) / 10;
+          customBlurXPct = newX;
+          const yInp = document.getElementById("blurSubYInput");
+          const wInp = document.getElementById("blurSubWInput");
+          const hInp = document.getElementById("blurSubHInput");
+          if (yInp) yInp.value = newY;
+          if (wInp) wInp.value = newW;
+          if (hInp) hInp.value = newH;
+        }
+        updateBlurZonePreview();
+      }
+
+      function onUp() {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        saveSettingsToServer();
+      }
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    }
+
+    function startSubBoxDrag(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = document.getElementById("previewPlayerWrap");
+      const overlay = document.getElementById("liveSubOverlay");
+      if (!wrap || !overlay) return;
+
+      const wrapRect = wrap.getBoundingClientRect();
+      const startMouseX = e.clientX;
+      const startMouseY = e.clientY;
+
+      const yPctBlur = parseFloat(document.getElementById("blurSubYInput")?.value || "86");
+      const hPctBlur = parseFloat(document.getElementById("blurSubHInput")?.value || "10");
+      const startSubX = customSubPosXPct !== null ? customSubPosXPct : 50.0;
+      const startSubY = customSubPosYPct !== null ? customSubPosYPct : yPctBlur + hPctBlur * 0.5;
+      overlay.style.cursor = "grabbing";
+
+      function onMove(ev) {
+        const dxPct = ((ev.clientX - startMouseX) / Math.max(1, wrapRect.width)) * 100;
+        const dyPct = ((ev.clientY - startMouseY) / Math.max(1, wrapRect.height)) * 100;
+        customSubPosXPct = Math.round(Math.min(92, Math.max(8, startSubX + dxPct)) * 10) / 10;
+        customSubPosYPct = Math.round(Math.min(96, Math.max(5, startSubY + dyPct)) * 10) / 10;
+        updateCapcutSubPreviewStyle();
+      }
+
+      function onUp() {
+        overlay.style.cursor = "grab";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      }
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    }
+
+    function onSubBoxWheel(e) {
+      e.preventDefault();
+      const sizeInp = document.getElementById("capcutSubSizeInput");
+      if (!sizeInp) return;
+      const curSize = parseInt(sizeInp.value || "52", 10);
+      const delta = e.deltaY < 0 ? 2 : -2;
+      sizeInp.value = Math.min(96, Math.max(24, curSize + delta));
+      updateCapcutSubPreviewStyle();
+    }
+
+    function resetCapcutOverlayPositions() {
+      customBlurXPct = null;
+      customSubPosXPct = 50.0;
+      customSubPosYPct = null;
+      const yInp = document.getElementById("blurSubYInput");
+      const hInp = document.getElementById("blurSubHInput");
+      const wInp = document.getElementById("blurSubWInput");
+      if (yInp) yInp.value = "86";
+      if (hInp) hInp.value = "10";
+      if (wInp) wInp.value = "82";
+      updateBlurZonePreview();
+      updateCapcutSubPreviewStyle();
+      saveSettingsToServer();
+    }
+
+    function updateBlurZonePreview() {
+      const box = document.getElementById("blurZoneOverlay");
+      if (!box) return;
+      const mode = document.getElementById("blurSubModeSelect")?.value || "delogo";
+      if (mode === "off") {
+        box.style.display = "none";
+        return;
+      }
+      const yPct = Math.min(96, Math.max(20, parseFloat(document.getElementById("blurSubYInput")?.value || "86")));
+      const hPct = Math.min(40, Math.max(3, parseFloat(document.getElementById("blurSubHInput")?.value || "10")));
+      const wPct = Math.min(98, Math.max(20, parseFloat(document.getElementById("blurSubWInput")?.value || "82")));
+      const leftPct = customBlurXPct !== null ? Math.min(99 - wPct, Math.max(0, customBlurXPct)) : (100 - wPct) / 2;
+
+      box.style.display = "flex";
+      box.style.top = `${yPct}%`;
+      if (typeof updateCapcutSubPreviewStyle === "function") updateCapcutSubPreviewStyle();
+      box.style.height = `${hPct}%`;
+      box.style.left = `${leftPct}%`;
+      box.style.width = `${wPct}%`;
+
+      if (mode === "blackbar") {
+        box.style.background = "rgba(0, 0, 0, 0.78)";
+        box.style.backdropFilter = "none";
+      } else {
+        box.style.background = "rgba(15, 23, 42, 0.22)";
+        box.style.backdropFilter = "blur(9px)";
+      }
+    }
+
+    async function blurCurrentPreviewVideoNow() {
+      if (!srtTargetPath) {
+        alert("Chưa có video nào đang được chọn để làm mờ chữ Trung Quốc!");
+        return;
+      }
+      await saveSettingsToServer();
+      const btn = document.getElementById("blurNowBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Đang xóa mờ chữ Trung...";
+      }
+      try {
+        const res = await fetch("/api/blur-video-now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: srtTargetPath }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert(data.message || "Lỗi làm mờ chữ Trung Quốc!");
+        } else {
+          renderSrtTarget(data);
+          if (data.blurred_video) {
+            previewSpecificVideo(data.blurred_video);
+          }
+          alert(data.message);
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "🌫️ Làm Mờ Chữ Trung Cho Video Này Ngay";
+        }
+      }
+    }
+
+    function loadVideoIntoPreviewPlayer(videoPath, autoPlay = false) {
+      if (!videoPath) return;
+      const player = document.getElementById("previewVideoPlayer");
+      if (!player) return;
+      if (currentPreviewLoadedPath !== videoPath) {
+        currentPreviewLoadedPath = videoPath;
+        player.src = `/api/video-stream?path=${encodeURIComponent(videoPath)}`;
+        player.load();
+      }
+      if (autoPlay) {
+        player.play().catch(() => {});
+      }
+    }
+
+    async function onSelectPreviewVideo(videoPath, autoPlay = false) {
+      if (!videoPath) return;
+      srtTargetPath = videoPath;
+      loadVideoIntoPreviewPlayer(videoPath, autoPlay);
+      try {
+        const res = await fetch("/api/set-active-video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: videoPath }),
+        });
+        const data = await res.json();
+        if (data.srt_rows) {
+          srtRowsData = data.srt_rows;
+          renderSrtTable();
+        }
+        if (data.srt_status_msg) {
+          document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+        }
+        renderSrtTarget(data);
+      } catch (e) {}
+    }
+
+    function previewSpecificVideo(videoPath) {
+      const wrap = document.getElementById("previewPlayerWrap");
+      if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+      onSelectPreviewVideo(videoPath, true);
+    }
+
+    function seekPreviewToSrtRow(idx) {
+      const row = srtRowsData[idx];
+      if (!row) return;
+      const sec = parseSrtTimeToSec(row.start);
+      const player = document.getElementById("previewVideoPlayer");
+      if (player) {
+        if (!currentPreviewLoadedPath && srtTargetPath) {
+          loadVideoIntoPreviewPlayer(srtTargetPath, false);
+        }
+        player.currentTime = Math.max(0, sec);
+        player.play().catch(() => {});
+      }
+    }
+
+    function onPreviewTimeUpdate() {
+      const player = document.getElementById("previewVideoPlayer");
+      const overlay = document.getElementById("liveSubOverlay");
+      const viEl = document.getElementById("liveSubViText");
+      const zhEl = document.getElementById("liveSubZhText");
+      if (!overlay || !viEl) return;
+
+      const burnChecked = document.getElementById("capcutBurnSubCheck")?.checked !== false;
+      if (!burnChecked) {
+        overlay.style.display = "none";
+        return;
+      }
+
+      if (!player || !srtRowsData || srtRowsData.length === 0) {
+        overlay.style.display = "block";
+        viEl.textContent = "✋ Kéo thả chữ Phụ Đề Tiếng Việt này tới vị trí bất kỳ (Lăn chuột chỉnh cỡ chữ)";
+        if (zhEl) zhEl.style.display = "none";
+        return;
+      }
+
+      const cur = player.currentTime || 0;
+      const activeCue = srtRowsData.find((r) => {
+        const s = parseSrtTimeToSec(r.start);
+        const e = parseSrtTimeToSec(r.end);
+        return cur >= s && cur <= e;
+      });
+
+      if (activeCue) {
+        overlay.style.display = "block";
+        viEl.textContent = activeCue.vi_text || "";
+        if (zhEl) {
+          zhEl.textContent = activeCue.zh_text || "";
+          zhEl.style.display = activeCue.zh_text ? "inline-block" : "none";
+        }
+      } else if (player.paused || cur < 0.5) {
+        const firstCue = srtRowsData.find((r) => (r.vi_text || "").trim()) || srtRowsData[0];
+        overlay.style.display = "block";
+        viEl.textContent = firstCue?.vi_text
+          ? `✋ ${firstCue.vi_text}`
+          : "✋ Kéo thả chữ Phụ Đề Tiếng Việt này tới vị trí bất kỳ";
+        if (zhEl) zhEl.style.display = "none";
+      } else {
+        overlay.style.display = "none";
+      }
+    }
+
+    function _onPreviewTimeUpdate_legacy() {
+      const player = document.getElementById("previewVideoPlayer");
+      const overlay = document.getElementById("liveSubOverlay");
+      if (!player || !overlay || !srtRowsData || srtRowsData.length === 0) {
+        if (overlay) overlay.style.display = "none";
+        return;
+      }
+      const cur = player.currentTime;
+      const activeCue = srtRowsData.find((r) => {
+        const s = parseSrtTimeToSec(r.start);
+        const e = parseSrtTimeToSec(r.end);
+        return cur >= s && cur <= e;
+      });
+      if (activeCue) {
+        overlay.style.display = "block";
+        document.getElementById("liveSubViText").textContent = activeCue.vi_text || "";
+        const zhEl = document.getElementById("liveSubZhText");
+        zhEl.textContent = activeCue.zh_text || "";
+        zhEl.style.display = activeCue.zh_text ? "inline-block" : "none";
+      } else {
+        const sampleText = srtRowsData[0]?.vi_text || "✋ Kéo thả chữ Phụ Đề Tiếng Việt này tới vị trí bất kỳ (Lăn chuột chỉnh cỡ chữ)";
+        overlay.style.display = document.getElementById("capcutBurnSubCheck")?.checked === false ? "none" : "block";
+        document.getElementById("liveSubViText").textContent = player.paused ? `✋ [Vị trí Sub] ${sampleText}` : "";
+        document.getElementById("liveSubZhText").style.display = "none";
+        if (!player.paused) overlay.style.display = "none";
+      }
+      if (false) {
+        overlay.style.display = "block";
+        document.getElementById("liveSubViText").textContent = activeCue.vi_text || "";
+        const zhEl = document.getElementById("liveSubZhText");
+        zhEl.textContent = activeCue.zh_text || "";
+        zhEl.style.display = activeCue.zh_text ? "inline-block" : "none";
+      } else {
+        overlay.style.display = "none";
+      }
+    }
 
     function renderSrtTarget(data) {
       const outputs = data.finished_outputs || [];
+      const avail = data.available_videos || [];
       const local = (data.plan?.items || currentPlan?.items || []).find((item) => item.is_local);
       srtTargetPath = data.active_video_for_srt || outputs.at(-1)?.path || local?.source || "";
       const label = document.getElementById("srtTargetLabel");
       if (srtTargetPath) {
         const filename = srtTargetPath.split(/[\\/]/).pop();
-        label.textContent = `🎬 Video dùng để tách phụ đề và ghép thuyết minh: ${filename}`;
+        label.textContent = `🎬 Video đang chọn để Xem Trước / Tách Phụ Đề / Ghép Thuyết Minh: ${filename}`;
+        if (!currentPreviewLoadedPath) {
+          loadVideoIntoPreviewPlayer(srtTargetPath, false);
+        }
       } else {
         label.textContent = "🎬 Chưa có video từ Bước 3. Hãy xuất video trước, hoặc chọn file video trên máy.";
+      }
+
+      const sel = document.getElementById("previewVideoSelect");
+      const availAudios = data.available_audios || [];
+      const audioSel = document.getElementById("capcutAudioSelect");
+      if (audioSel && availAudios.length > 0) {
+        const curAudioVal = audioSel.value;
+        const audioSig = availAudios.map((a) => a.path).join("|");
+        if (audioSel.dataset.sig !== audioSig) {
+          audioSel.dataset.sig = audioSig;
+          audioSel.innerHTML = availAudios
+            .map(
+              (a, i) =>
+                `<option value="${a.path.replace(/"/g, "&quot;")}" ${
+                  (curAudioVal && a.path === curAudioVal) || (!curAudioVal && i === 0) ? "selected" : ""
+                }>${a.label}</option>`
+            )
+            .join("");
+          const chosenAudio = audioSel.value || availAudios[0]?.path || "";
+          if (chosenAudio) {
+            loadMp3IntoPreviewAudio(chosenAudio);
+          }
+        }
+      }
+      if (sel && avail.length > 0) {
+        const prevHtml = sel.dataset.sig || "";
+        const newSig = avail.map((v) => v.path).join("|") + "::" + srtTargetPath;
+        if (prevHtml !== newSig) {
+          sel.dataset.sig = newSig;
+          sel.innerHTML = avail
+            .map(
+              (v) =>
+                `<option value="${v.path.replace(/"/g, "&quot;")}" ${
+                  v.path === srtTargetPath ? "selected" : ""
+                }>${v.label}</option>`
+            )
+            .join("");
+        }
       }
     }
 
@@ -1170,6 +1834,19 @@
         currentTargetHours = data.target_hours || 0.25;
         document.getElementById("cookiesBrowserSelect").value = data.settings?.cookies_from_browser || "";
         document.getElementById("whisperModelSelect").value = data.settings?.whisper_model || "small";
+        const ac = data.settings?.anti_copyright || {};
+        document.getElementById("antiCopyrightLevel").value = ac.enabled === false ? "off" : (ac.level || "hardcore");
+        if (ac.speed_factor !== undefined) document.getElementById("acSpeedInput").value = ac.speed_factor;
+        if (ac.pitch_shift !== undefined) document.getElementById("acPitchInput").value = ac.pitch_shift;
+        if (ac.zoom_factor !== undefined) document.getElementById("acZoomInput").value = ac.zoom_factor;
+        if (ac.contrast !== undefined) document.getElementById("acContrastInput").value = ac.contrast;
+        if (ac.flip_horizontal !== undefined) document.getElementById("flipHorizontalCheck").checked = !!ac.flip_horizontal;
+        const bs = data.settings?.blur_sub || {};
+        if (bs.mode !== undefined) document.getElementById("blurSubModeSelect").value = bs.mode;
+        if (bs.y_pct !== undefined) document.getElementById("blurSubYInput").value = bs.y_pct;
+        if (bs.h_pct !== undefined) document.getElementById("blurSubHInput").value = bs.h_pct;
+        if (bs.w_pct !== undefined) document.getElementById("blurSubWInput").value = bs.w_pct;
+        updateBlurZonePreview();
         selectedChunkSet = new Set(data.selected_chunks || []);
         srtRowsData = data.srt_rows || [];
         renderSrtTable();
@@ -1330,6 +2007,32 @@
       await saveSettingsToServer();
     }
 
+    async function onAntiCopyrightLevelChange() {
+      const levelVal = document.getElementById("antiCopyrightLevel").value;
+      if (levelVal === "hardcore") {
+        document.getElementById("acSpeedInput").value = "1.04";
+        document.getElementById("acPitchInput").value = "1.00";
+        document.getElementById("acZoomInput").value = "1.045";
+        document.getElementById("acContrastInput").value = "1.05";
+      } else if (levelVal === "medium") {
+        document.getElementById("acSpeedInput").value = "1.03";
+        document.getElementById("acPitchInput").value = "1.00";
+        document.getElementById("acZoomInput").value = "1.035";
+        document.getElementById("acContrastInput").value = "1.04";
+      } else if (levelVal === "basic") {
+        document.getElementById("acSpeedInput").value = "1.00";
+        document.getElementById("acPitchInput").value = "1.00";
+        document.getElementById("acZoomInput").value = "1.02";
+        document.getElementById("acContrastInput").value = "1.03";
+      } else {
+        document.getElementById("acSpeedInput").value = "1.00";
+        document.getElementById("acPitchInput").value = "1.00";
+        document.getElementById("acZoomInput").value = "1.00";
+        document.getElementById("acContrastInput").value = "1.00";
+      }
+      await saveSettingsToServer();
+    }
+
     async function saveSettingsToServer() {
       const levelVal = document.getElementById("antiCopyrightLevel").value;
       const payload = {
@@ -1349,6 +2052,16 @@
             enabled: levelVal !== "off",
             level: levelVal === "off" ? "basic" : levelVal,
             flip_horizontal: document.getElementById("flipHorizontalCheck").checked,
+            speed_factor: parseFloat(document.getElementById("acSpeedInput").value || "1.04"),
+            pitch_shift: parseFloat(document.getElementById("acPitchInput").value || "1.00"),
+            zoom_factor: parseFloat(document.getElementById("acZoomInput").value || "1.045"),
+            contrast: parseFloat(document.getElementById("acContrastInput").value || "1.05"),
+          },
+          blur_sub: {
+            mode: document.getElementById("blurSubModeSelect").value,
+            y_pct: parseFloat(document.getElementById("blurSubYInput").value || "86"),
+            h_pct: parseFloat(document.getElementById("blurSubHInput").value || "10"),
+            w_pct: parseFloat(document.getElementById("blurSubWInput").value || "82"),
           },
         },
       };
@@ -1475,6 +2188,7 @@
     // ==================== HÀM XỬ LÝ BẢNG SỬA PHỤ ĐỀ (.SRT) THỦ CÔNG ====================
     function renderSrtTable() {
       const tbody = document.getElementById("srtTableBody");
+      if (typeof onPreviewTimeUpdate === "function") setTimeout(onPreviewTimeUpdate, 30);
       if (!srtRowsData || srtRowsData.length === 0) {
         tbody.innerHTML = `
           <tr>
@@ -1489,7 +2203,9 @@
         .map(
           (row, idx) => `
         <tr>
-          <td style="font-weight:800; color:#94a3b8;">#${idx + 1}</td>
+          <td style="font-weight:800; color:#94a3b8;">
+            <button class="icon-btn" title="Tua video tới câu #${idx + 1}" onclick="seekPreviewToSrtRow(${idx})" style="margin-right:4px; color:#38bdf8;">▶️</button>#${idx + 1}
+          </td>
           <td>
             <div style="display:flex; align-items:center; gap:4px;">
               <input
@@ -1651,6 +2367,300 @@
       }
     }
 
+    let currentLoadedMp3Path = "";
+
+    function loadMp3IntoPreviewAudio(mp3Path) {
+      if (!mp3Path) return;
+      const aud = document.getElementById("ttsAudioPreviewPlayer");
+      if (!aud) return;
+      if (currentLoadedMp3Path !== mp3Path) {
+        currentLoadedMp3Path = mp3Path;
+        aud.src = `/api/video-stream?path=${encodeURIComponent(mp3Path)}`;
+        aud.load();
+      }
+    }
+
+    function onSelectCapcutAudio(mp3Path) {
+      if (mp3Path) {
+        loadMp3IntoPreviewAudio(mp3Path);
+      }
+    }
+
+    async function pickExternalMp3File() {
+      const res = await fetch("/api/srt/pick-audio", { method: "POST", body: "{}" });
+      const data = await res.json();
+      if (data.ok && data.audio_vi) {
+        renderSrtTarget(data);
+        const audioSel = document.getElementById("capcutAudioSelect");
+        if (audioSel) audioSel.value = data.audio_vi;
+        loadMp3IntoPreviewAudio(data.audio_vi);
+        document.getElementById("srtStatusLabel").textContent = data.message;
+      }
+    }
+
+    function isPreviewingAlreadyDubbedVideo() {
+      const p = (currentPreviewLoadedPath || "").toLowerCase();
+      return p.includes("_capcut_hoan_chinh") || p.includes("_lồng_tiếng_việt");
+    }
+
+    function onMixerVolumeChange() {
+      const ttsVol = parseFloat(document.getElementById("capcutTtsVolInput")?.value || "1.0");
+      const origVol = parseFloat(document.getElementById("capcutOrigVolInput")?.value || "0.12");
+      const ttsLbl = document.getElementById("capcutTtsVolLabel");
+      const origLbl = document.getElementById("capcutOrigVolLabel");
+      if (ttsLbl) ttsLbl.textContent = `${Math.round(ttsVol * 100)}%`;
+      if (origLbl) origLbl.textContent = `${Math.round(origVol * 100)}%`;
+
+      const vid = document.getElementById("previewVideoPlayer");
+      const aud = document.getElementById("ttsAudioPreviewPlayer");
+      const syncOn = document.getElementById("syncMp3WithVideoCheck")?.checked;
+      if (vid && syncOn && currentLoadedMp3Path && !isPreviewingAlreadyDubbedVideo()) {
+        vid.volume = Math.min(1.0, Math.max(0.0, origVol));
+      } else if (vid) {
+        vid.volume = 1.0;
+      }
+      if (aud) {
+        aud.volume = Math.min(1.0, Math.max(0.0, ttsVol));
+      }
+    }
+
+    function onPreviewPlaySync() {
+      const vid = document.getElementById("previewVideoPlayer");
+      const aud = document.getElementById("ttsAudioPreviewPlayer");
+      const syncOn = document.getElementById("syncMp3WithVideoCheck")?.checked;
+      onMixerVolumeChange();
+      if (vid && aud && syncOn && currentLoadedMp3Path && !isPreviewingAlreadyDubbedVideo()) {
+        if (Math.abs((aud.currentTime || 0) - (vid.currentTime || 0)) > 0.25) {
+          aud.currentTime = vid.currentTime || 0;
+        }
+        aud.playbackRate = vid.playbackRate || 1.0;
+        aud.play().catch(() => {});
+      }
+    }
+
+    function onPreviewPauseSync() {
+      const aud = document.getElementById("ttsAudioPreviewPlayer");
+      if (aud && !aud.paused) {
+        aud.pause();
+      }
+    }
+
+    function onPreviewSeekSync() {
+      const vid = document.getElementById("previewVideoPlayer");
+      const aud = document.getElementById("ttsAudioPreviewPlayer");
+      const syncOn = document.getElementById("syncMp3WithVideoCheck")?.checked;
+      if (vid && aud && syncOn && currentLoadedMp3Path && !isPreviewingAlreadyDubbedVideo()) {
+        aud.currentTime = vid.currentTime || 0;
+      }
+    }
+
+    function updateCapcutSubPreviewStyle() {
+      const viEl = document.getElementById("liveSubViText");
+      const overlay = document.getElementById("liveSubOverlay");
+      if (!viEl || !overlay) return;
+      const colorVal = document.getElementById("capcutSubColorSelect")?.value || "yellow";
+      const sizeVal = parseFloat(document.getElementById("capcutSubSizeInput")?.value || "52");
+      const useBox = document.getElementById("capcutSubBoxCheck")?.checked !== false;
+
+      const colorMap = {
+        yellow: "#fde047",
+        white: "#ffffff",
+        cyan: "#38bdf8",
+        green: "#4ade80",
+      };
+      viEl.style.color = colorMap[colorVal] || "#fde047";
+      viEl.style.fontSize = `${Math.max(13, Math.round(sizeVal * 0.34))}px`;
+      viEl.style.background = useBox ? "rgba(0, 0, 0, 0.82)" : "transparent";
+      viEl.style.textShadow = useBox
+        ? "0 2px 4px #000"
+        : "-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 3px 6px #000";
+
+      const yPct = Math.min(96, Math.max(20, parseFloat(document.getElementById("blurSubYInput")?.value || "86")));
+      const hPct = Math.min(40, Math.max(3, parseFloat(document.getElementById("blurSubHInput")?.value || "10")));
+      const bottomPct = Math.max(3, 100 - (yPct + hPct * 0.85));
+      const targetSubX = customSubPosXPct !== null ? customSubPosXPct : 50.0;
+      const targetSubY = customSubPosYPct !== null ? customSubPosYPct : (yPct + hPct * 0.5);
+      overlay.style.left = `${targetSubX}%`;
+      overlay.style.top = `${targetSubY}%`;
+      overlay.style.bottom = "auto";
+      overlay.style.right = "auto";
+      overlay.style.transform = "translate(-50%, -50%)";
+      if (false) overlay.style.bottom = `${bottomPct}%`;
+    }
+
+    function downloadCurrentMp3File() {
+      const mp3Path = document.getElementById("capcutAudioSelect")?.value || currentLoadedMp3Path || "";
+      if (!mp3Path) {
+        alert("Chưa có file .MP3 thuyết minh nào! Hãy bấm nút '🔊 3A. TẠO FILE .MP3 THUYẾT MINH' trước.");
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = `/api/video-stream?path=${encodeURIComponent(mp3Path)}`;
+      a.download = mp3Path.split(/[\\/]/).pop() || "thuyet_minh_tieng_viet.mp3";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    async function generateOnlyMp3FromSrt() {
+      if (!srtRowsData.some((row) => (row.vi_text || "").trim())) {
+        alert("Chưa có phụ đề Tiếng Việt trong bảng. Hãy tách phụ đề từ video hoặc mở file .SRT trước.");
+        return;
+      }
+      const btn = document.getElementById("ttsOnlyMp3Btn");
+      const voice = document.getElementById("ttsVoiceSelect")?.value || "vi-VN-NamMinhNeural";
+      const startedAt = Date.now();
+      const progTimer = setInterval(() => {
+        const sec = Math.floor((Date.now() - startedAt) / 1000);
+        const phaseMsg = window.currentSrtPhase || "🗣️ Đang tạo file .MP3 thuyết minh AI...";
+        if (btn) btn.textContent = `${phaseMsg} (${sec}s)`;
+        document.getElementById("srtStatusLabel").textContent = `${phaseMsg} (${sec}s)`;
+      }, 800);
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Đang tạo file .MP3 thuyết minh...";
+      }
+      try {
+        const res = await fetch("/api/srt/generate-tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ srt_rows: srtRowsData, voice, only_mp3: true }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert("Lỗi tạo file .MP3: " + data.message);
+        } else {
+          renderSrtTarget(data);
+          if (data.audio_vi) {
+            const audioSel = document.getElementById("capcutAudioSelect");
+            if (audioSel) audioSel.value = data.audio_vi;
+            loadMp3IntoPreviewAudio(data.audio_vi);
+          }
+          document.getElementById("srtStatusLabel").textContent = data.message;
+          alert(data.message + "\n👉 File .MP3 đã sẵn sàng! Bạn có thể nghe thử, bấm '⬇️ Tải File .MP3 Này Về Máy', hoặc bấm '🎬 3B. XUẤT VIDEO ĐÃ CHỈNH KIỂU CAPCUT'!");
+        }
+      } finally {
+        clearInterval(progTimer);
+        window.currentSrtPhase = "";
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "🔊 3A. TẠO FILE .MP3 THUYẾT MINH (XUẤT RIÊNG .MP3)";
+        }
+      }
+    }
+
+    async function _generateOnlyMp3FromSrt_legacy() {
+      if (!srtTargetPath) {
+        alert("Chưa có video đang chọn! Hãy chọn video trên trình Xem Trước trước.");
+        return;
+      }
+      if (!srtRowsData.some((row) => (row.vi_text || "").trim())) {
+        alert("Chưa có phụ đề Tiếng Việt trong bảng. Hãy tách phụ đề hoặc mở file .SRT trước.");
+        return;
+      }
+      const btn = document.getElementById("ttsOnlyMp3Btn");
+      const voice = document.getElementById("ttsVoiceSelect")?.value || "vi-VN-NamMinhNeural";
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Đang tạo file .MP3...";
+      }
+      try {
+        const res = await fetch("/api/srt/generate-tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ srt_rows: srtRowsData, voice, only_mp3: true }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert("Lỗi: " + data.message);
+        } else {
+          renderSrtTarget(data);
+          if (data.audio_vi) {
+            const audioSel = document.getElementById("capcutAudioSelect");
+            if (audioSel) audioSel.value = data.audio_vi;
+            loadMp3IntoPreviewAudio(data.audio_vi);
+          }
+          document.getElementById("srtStatusLabel").textContent = data.message;
+          alert(data.message + "\n👉 Bây giờ bạn có thể bấm nút '🎬 3B. XUẤT VIDEO ĐÃ CHỈNH KIỂU CAPCUT' bên dưới!");
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "🔊 3A. Tạo / Cập Nhật File .MP3";
+        }
+      }
+    }
+
+    async function exportCapcutVideoNow() {
+      if (!srtTargetPath) {
+        alert("Chưa có video để xuất! Hãy chọn video ở mục Xem Trước Video.");
+        return;
+      }
+      await saveSettingsToServer();
+      const btn = document.getElementById("capcutExportBtn");
+      const audioPath = document.getElementById("capcutAudioSelect")?.value || currentLoadedMp3Path || "";
+      const voice = document.getElementById("ttsVoiceSelect")?.value || "vi-VN-NamMinhNeural";
+      const origVol = parseFloat(document.getElementById("capcutOrigVolInput")?.value || "0.12");
+      const ttsVol = parseFloat(document.getElementById("capcutTtsVolInput")?.value || "1.0");
+      const blurSub = {
+        mode: document.getElementById("blurSubModeSelect")?.value || "delogo",
+        y_pct: parseFloat(document.getElementById("blurSubYInput")?.value || "86"),
+        h_pct: parseFloat(document.getElementById("blurSubHInput")?.value || "10"),
+        w_pct: parseFloat(document.getElementById("blurSubWInput")?.value || "82"),
+        x_pct: customBlurXPct !== null ? customBlurXPct : undefined,
+      };
+      const burnSub = {
+        enabled: !!document.getElementById("capcutBurnSubCheck")?.checked,
+        color: document.getElementById("capcutSubColorSelect")?.value || "yellow",
+        font_size: parseInt(document.getElementById("capcutSubSizeInput")?.value || "52", 10),
+        box: !!document.getElementById("capcutSubBoxCheck")?.checked,
+        pos_x_pct: customSubPosXPct !== null ? customSubPosXPct : 50.0,
+        pos_y_pct: customSubPosYPct !== null ? customSubPosYPct : undefined,
+      };
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Đang kết xuất Video CapCut (Mờ chữ Trung + Hardsub Việt + MP3)...";
+      }
+      document.getElementById("srtStatusLabel").textContent =
+        "🎬 Đang kết xuất Video CapCut Hoàn Chỉnh (Làm mờ chữ Trung + In cứng Sub Việt + Trộn MP3)...";
+
+      try {
+        const res = await fetch("/api/srt/export-capcut-video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            video_path: srtTargetPath,
+            audio_path: audioPath,
+            voice,
+            srt_rows: srtRowsData,
+            blur_sub: blurSub,
+            burn_sub: burnSub,
+            original_vol: origVol,
+            tts_vol: ttsVol,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert("Lỗi xuất video CapCut: " + data.message);
+        } else {
+          renderSrtTarget(data);
+          if (data.dubbed_video) {
+            previewSpecificVideo(data.dubbed_video);
+          }
+          document.getElementById("srtStatusLabel").textContent = data.message;
+          alert(data.message);
+        }
+      } catch (err) {
+        alert("Lỗi kết nối khi xuất video: " + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "🎬 3B. XUẤT VIDEO ĐÃ CHỈNH KIỂU CAPCUT (RA FILE .MP4 NGAY)";
+        }
+      }
+    }
+
     async function renderTtsFromEditedSrt() {
       if (!srtTargetPath) {
         alert("Chưa có video để ghép thuyết minh. Hãy hoàn tất Bước 3 hoặc chọn file video trên máy.");
@@ -1675,6 +2685,9 @@
           alert("Lỗi: " + data.message);
         } else {
           document.getElementById("srtStatusLabel").textContent = data.message;
+          if (data.dubbed_video) {
+            previewSpecificVideo(data.dubbed_video);
+          }
           alert(data.message);
         }
       } finally {
@@ -1775,9 +2788,14 @@
                 <div class="chunk-card-title" style="color: #6ee7b7;">✅ ${f.name}</div>
                 <div class="chunk-card-sub">Thời lượng: <b>${f.duration_human}</b> | Dung lượng: <b>${f.size_label}</b></div>
               </div>
-              <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="openOutputFolder()">
-                📂 Lấy File
-              </button>
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="previewSpecificVideo('${(f.path || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')">
+                  ▶️ Xem Trước
+                </button>
+                <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="openOutputFolder()">
+                  📂 Lấy File
+                </button>
+              </div>
             </div>
           `
             )

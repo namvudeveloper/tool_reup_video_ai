@@ -128,16 +128,16 @@ def _get_effective_anti_copyright_params(settings: Dict[str, Any]) -> Dict[str, 
             "level": "medium",
             "zoom_factor": float(anti_cfg.get("zoom_factor", 1.035)),
             "asymmetric_crop": True,
-            "micro_rotate_deg": 0.0,
-            "brightness": 0.018,
-            "contrast": 1.04,
-            "saturation": 1.06,
+            "micro_rotate_deg": float(anti_cfg.get("micro_rotate_deg", 0.0)),
+            "brightness": float(anti_cfg.get("brightness", 0.018)),
+            "contrast": float(anti_cfg.get("contrast", 1.04)),
+            "saturation": float(anti_cfg.get("saturation", 1.06)),
             "gamma_r": 1.02,
             "gamma_g": 1.0,
             "gamma_b": 0.98,
             "hue_shift": 1.5,
             "unsharp": True,
-            "film_grain": 0,
+            "film_grain": int(anti_cfg.get("film_grain", 0)),
             "vignette": True,
             "flip_horizontal": flip_h,
             "speed_factor": float(anti_cfg.get("speed_factor", 1.03)),
@@ -155,9 +155,9 @@ def _get_effective_anti_copyright_params(settings: Dict[str, Any]) -> Dict[str, 
             "zoom_factor": float(anti_cfg.get("zoom_factor", 1.045)),
             "asymmetric_crop": True,
             "micro_rotate_deg": float(anti_cfg.get("micro_rotate_deg", 0.45)),
-            "brightness": 0.02,
-            "contrast": 1.05,
-            "saturation": 1.07,
+            "brightness": float(anti_cfg.get("brightness", 0.02)),
+            "contrast": float(anti_cfg.get("contrast", 1.05)),
+            "saturation": float(anti_cfg.get("saturation", 1.07)),
             "gamma_r": 1.03,
             "gamma_g": 0.99,
             "gamma_b": 0.97,
@@ -167,12 +167,57 @@ def _get_effective_anti_copyright_params(settings: Dict[str, Any]) -> Dict[str, 
             "vignette": True,
             "flip_horizontal": flip_h,
             "speed_factor": float(anti_cfg.get("speed_factor", 1.04)),
-            "pitch_shift": float(anti_cfg.get("pitch_shift", 1.02)),
+            "pitch_shift": float(anti_cfg.get("pitch_shift", 1.0)),
             "audio_eq_scrambler": True,
             "audio_stereo_phase": True,
             "audio_pink_noise": bool(anti_cfg.get("audio_pink_noise", True)),
             "scramble_gop": True,
         }
+
+
+def build_blur_sub_filter(width: int, height: int, blur_cfg: Dict[str, Any]) -> str:
+    """
+    Tạo chuỗi filter FFmpeg để làm mờ / xóa dòng chữ phụ đề Trung Quốc (hardsub) ở đáy video.
+    Hỗ trợ 3 chế độ:
+    - 'delogo': Nội suy xóa chữ hòa trộn nền xung quanh (nhanh nhất, tự nhiên)
+    - 'blur': Làm mờ kính (Gaussian/Box Blur) vùng chữ Trung Quốc
+    - 'blackbar': Phủ dải nền tối bán trong suốt che kín chữ Trung Quốc
+    """
+    if not blur_cfg:
+        return ""
+    mode = str(blur_cfg.get("mode", "off") or "off").lower().strip()
+    if mode in ("off", "none", "false", ""):
+        return ""
+
+    y_pct = min(96.0, max(2.0, float(blur_cfg.get("y_pct", 86.0) or 86.0)))
+    h_pct = min(40.0, max(3.0, float(blur_cfg.get("h_pct", 10.0) or 10.0)))
+    w_pct = min(98.0, max(20.0, float(blur_cfg.get("w_pct", 82.0) or 82.0)))
+
+    bw = int(round(width * (w_pct / 100.0)))
+    bh = int(round(height * (h_pct / 100.0)))
+    bw = max(16, min(width - 8, bw - (bw % 2)))
+    bh = max(12, min(height - 8, bh - (bh % 2)))
+
+    if blur_cfg.get("x_pct") is not None:
+        x_pct = min(95.0, max(0.0, float(blur_cfg.get("x_pct"))))
+        bx = int(round(width * (x_pct / 100.0)))
+    else:
+        bx = (width - bw) // 2
+    bx = max(4, min(width - bw - 4, bx - (bx % 2)))
+    by = int(round(height * (y_pct / 100.0)))
+    by = max(4, min(height - bh - 4, by - (by % 2)))
+
+    if mode == "delogo":
+        return f"delogo=x={bx}:y={by}:w={bw}:h={bh}"
+    elif mode == "blur":
+        return (
+            f"split[vmain][vsub];"
+            f"[vsub]crop={bw}:{bh}:{bx}:{by},boxblur=16:2[vblur];"
+            f"[vmain][vblur]overlay={bx}:{by}"
+        )
+    elif mode == "blackbar":
+        return f"drawbox=x={bx}:y={by}:w={bw}:h={bh}:color=black@0.78:t=fill"
+    return ""
 
 
 def _build_filters(
@@ -250,14 +295,27 @@ def _build_filters(
         # 9. Thay đổi tốc độ khung hình theo thời gian thực (Speed Shift)
         speed = p["speed_factor"]
         if abs(speed - 1.0) > 0.004 and 0.5 <= speed <= 2.0:
-            v_filters.append(f"setpts=PTS/{speed:.4f}")
+            v_filters.append(f"setpts=(PTS-STARTPTS)/{speed:.4f}")
+        else:
+            v_filters.append("setpts=PTS-STARTPTS")
+    else:
+        v_filters.append("setpts=PTS-STARTPTS")
+
+    # 9b. Làm mờ / xóa phụ đề Trung Quốc gốc (Hardsub Blur / Delogo) nếu người dùng bật
+    blur_sub_cfg = settings.get("blur_sub", {}) or {}
+    blur_flt = build_blur_sub_filter(width, height, blur_sub_cfg)
+    if blur_flt:
+        v_filters.append("format=yuv420p")
+        v_filters.append(blur_flt)
 
     # 10. Ép đồng nhất FPS và định dạng màu chuẩn quốc tế yuv420p
     v_filters.append(f"fps={fps}")
     v_filters.append("format=yuv420p")
 
     # ================= CHUỖI FILTER ÂM THANH (BYPASS AUDIO CONTENT ID) =================
-    a_filters = []
+    # Bắt buộc chuẩn hóa tần số lấy mẫu về 48000Hz và đồng bộ mốc thời gian gốc (first_pts=0)
+    # TRƯỚC KHI chạy asetrate để tránh lỗi lệch tốc độ (48000/44100 = nhanh hơn 8.84%) và mất offset đầu đoạn cắt!
+    a_filters = ["aresample=48000:async=1:first_pts=0"]
     if has_audio and p["enabled"]:
         speed = p["speed_factor"]
         pitch = p["pitch_shift"]
@@ -293,7 +351,8 @@ def _build_filters(
     if has_audio and audio_norm:
         a_filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")
 
-    a_filters.append("aresample=48000:async=1")
+    a_filters.append("aresample=48000")
+    a_filters.append("asetpts=PTS-STARTPTS")
     a_filters.append("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo")
 
     return ",".join(v_filters), ",".join(a_filters)
