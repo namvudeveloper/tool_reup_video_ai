@@ -871,6 +871,9 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "message": str(exc)}, status=400)
                 return
             with STATE.lock:
+                new_ids = {m["id"] for m in new_metas}
+                # Xóa bản cache cũ nếu dán lại cùng link để luôn cập nhật đúng thời lượng thật (ví dụ 2 tiếng)
+                STATE.items = [it for it in STATE.items if it["id"] not in new_ids]
                 for m in new_metas:
                     STATE.items.append(m)
             return self._send_current_plan(reset_selection=True)
@@ -1182,6 +1185,18 @@ def start_gui_server(port: int = 8765, open_browser: bool = True) -> None:
     WEB_UI_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     SRT_WORK_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Tự động giải phóng tiến trình gui_server cũ trên cổng 8765 (nếu có) để luôn dùng bản code mới nhất
+    if platform.system().lower() == "darwin":
+        try:
+            res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, check=False)
+            for pid_str in (res.stdout or "").splitlines():
+                pid = int(pid_str.strip())
+                if pid != os.getpid():
+                    os.kill(pid, 9)
+            time.sleep(0.3)
+        except Exception:
+            pass
 
     server: Optional[ThreadingHTTPServer] = None
     actual_port = port

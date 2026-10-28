@@ -100,6 +100,22 @@ def download_all_videos(
             downloaded_files.append(target_mp4)
             continue
 
+        # Nếu là link Bilibili -> Sử dụng trực tiếp bộ Bilibili Bypass (vượt lỗi 412 / Initial State + lấy 1080p qua Chrome Cookie)
+        from core.bilibili_bypass import download_bilibili_slice_via_ffmpeg, is_bilibili_url
+
+        if is_bilibili_url(link):
+            log_info(f"[Tập {idx}/{total}] Đang tải Bilibili 1080p (Bypass 412 + Chrome Cookie): {link}")
+            download_bilibili_slice_via_ffmpeg(
+                url=link,
+                output_mp4=target_mp4,
+                ffmpeg_path=ffmpeg_path,
+                slice_range=slice_range,
+            )
+            size_mb = target_mp4.stat().st_size / (1024 * 1024)
+            log_success(f"[Tập {idx}/{total}] Hoàn tất tải Bilibili: {target_mp4.name} ({size_mb:.1f} MB)")
+            downloaded_files.append(target_mp4)
+            continue
+
         try:
             import yt_dlp
         except ImportError as exc:

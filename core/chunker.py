@@ -65,37 +65,38 @@ def probe_item_metadata(ffprobe_path: str, path_or_url: str, cookies_browser: st
         title = path_or_url.split("/")[-1][:48] or path_or_url
         dur = 0.0
         try:
-            import yt_dlp
+            from core.bilibili_bypass import fetch_bilibili_pages, is_bilibili_url
 
-            ydl_opts = {
-                "quiet": True,
-                "no_warnings": True,
-                "skip_download": True,
-                "extract_flat": "in_playlist",
-            }
-            if cookies_browser:
-                ydl_opts["cookiesfrombrowser"] = (cookies_browser,)
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(path_or_url, download=False)
-                if info:
-                    title = str(info.get("title") or title)
-                    if info.get("duration"):
-                        dur = float(info["duration"])
-                    elif info.get("entries"):
-                        entries = list(info["entries"])
-                        total_d = sum(float(e.get("duration") or 0.0) for e in entries if e)
-                        if total_d > 0:
-                            dur = total_d
+            if is_bilibili_url(path_or_url):
+                bili_info = fetch_bilibili_pages(path_or_url)
+                title = bili_info["title"]
+                dur = float(bili_info["total_duration"])
+            else:
+                import yt_dlp
+
+                ydl_opts = {
+                    "quiet": True,
+                    "no_warnings": True,
+                    "skip_download": True,
+                    "extract_flat": "in_playlist",
+                }
+                if cookies_browser:
+                    ydl_opts["cookiesfrombrowser"] = (cookies_browser,)
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(path_or_url, download=False)
+                    if info:
+                        title = str(info.get("title") or title)
+                        if info.get("duration"):
+                            dur = float(info["duration"])
+                        elif info.get("entries"):
+                            entries = list(info["entries"])
+                            total_d = sum(float(e.get("duration") or 0.0) for e in entries if e)
+                            if total_d > 0:
+                                dur = total_d
         except Exception as exc:
             detail = re.sub(r"\x1b\[[0-9;]*m", "", str(exc)).strip()
-            if "Unable to extract initial state" in detail:
-                raise RuntimeError(
-                    "yt-dlp hiện không đọc được dữ liệu trình phát Bilibili của video này, dù link có thể phát "
-                    "trong trình duyệt. Nếu bạn có file video nguồn, hãy chọn 'Chọn File Video Trên Máy' ở Bước 1."
-                ) from exc
             raise RuntimeError(
                 f"Không đọc được video từ link: {path_or_url}. "
-                "Hãy kiểm tra link hoặc dùng file video trên máy. "
                 f"Chi tiết: {detail}"
             ) from exc
         if dur <= 0:
@@ -163,16 +164,16 @@ def build_target_chunks(
             base_start = trim_start_sec
             kept_raw_dur = raw_dur - trim_start_sec - trim_end_sec
 
-        eff_dur = kept_raw_dur / speed
-        max_raw_slice = target_seconds * speed
+        eff_dur = kept_raw_dur
+        max_raw_slice = target_seconds
 
-        # Nếu chế độ chia theo mục tiêu (ví dụ 15 phút hoặc 5 tiếng) và video dài hơn mục tiêu
+        # Nếu chế độ chia theo mục tiêu (ví dụ 15 phút = 900s) và video dài hơn mục tiêu (ví dụ 2 tiếng = 7329s)
         if chunk_mode != "single" and target_hours > 0 and kept_raw_dur > max_raw_slice * 1.05:
             slice_offset = 0.0
             part_num = 1
             while slice_offset < kept_raw_dur - 1.0:
                 cur_raw_len = min(max_raw_slice, kept_raw_dur - slice_offset)
-                cur_eff_len = cur_raw_len / speed
+                cur_eff_len = cur_raw_len
                 sub_copy = dict(item)
                 sub_copy["ep_index"] = len(enriched_items) + 1
                 sub_copy["name"] = (
