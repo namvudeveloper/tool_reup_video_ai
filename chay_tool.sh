@@ -12,4 +12,11 @@ if [ "$1" = "--cli" ]; then
     "$PY_BIN" main.py "$@"
 else
     "$PY_BIN" gui_server.py "$@"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "❌ Tool đã dừng với mã lỗi: $rc"
+        echo ""
+        read -n 1 -s -r -p "Nhấn phím bất kỳ để đóng cửa sổ..."
+    fi
 fi

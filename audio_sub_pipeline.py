@@ -30,6 +30,14 @@ import wave
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+# Tự động nạp thư viện từ môi trường ảo .venv (hỗ trợ cả macOS & Windows)
+_project_root = Path(__file__).resolve().parent
+for _vbase in (_project_root / ".venv" / "lib", _project_root / ".venv" / "Lib"):
+    if _vbase.is_dir():
+        for _sp in _vbase.glob("**/site-packages"):
+            if _sp.is_dir() and str(_sp) not in sys.path:
+                sys.path.insert(0, str(_sp))
+
 try:
     import srt
 except ImportError:

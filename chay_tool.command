@@ -42,9 +42,9 @@ fi
 PY_BIN="python3"
 if [ -f ".venv/bin/python" ]; then
     PY_BIN=".venv/bin/python"
-    if [ ! -f ".venv/.deps_installed" ]; then
-        echo "[INFO] Đang kiểm tra / cài đặt thư viện hỗ trợ (yt-dlp, rich)..."
-        "$PY_BIN" -m pip install -r requirements.txt -q >/dev/null 2>&1 && touch .venv/.deps_installed || true
+    if [ ! -f ".venv/.deps_installed_mac" ]; then
+        echo "[INFO] Đang kiểm tra / cài đặt thư viện hỗ trợ trên macOS..."
+        "$PY_BIN" -m pip install -r requirements.txt -q >/dev/null 2>&1 && touch .venv/.deps_installed_mac || true
     fi
 fi
 
@@ -54,4 +54,12 @@ if [ "$1" = "--cli" ]; then
     "$PY_BIN" main.py "$@"
 else
     "$PY_BIN" gui_server.py "$@"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "❌ Tool đã dừng với mã lỗi: $rc"
+        echo "Vui lòng chụp lại thông báo lỗi ở trên để được hỗ trợ."
+        echo ""
+        read -n 1 -s -r -p "Nhấn phím bất kỳ để đóng cửa sổ..."
+    fi
 fi

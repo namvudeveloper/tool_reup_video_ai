@@ -11,7 +11,15 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+# Tự động nạp thư viện từ môi trường ảo .venv (hỗ trợ cả macOS & Windows)
+_project_root = Path(__file__).resolve().parent
+for _vbase in (_project_root / ".venv" / "lib", _project_root / ".venv" / "Lib"):
+    if _vbase.is_dir():
+        for _sp in _vbase.glob("**/site-packages"):
+            if _sp.is_dir() and str(_sp) not in sys.path:
+                sys.path.insert(0, str(_sp))
 
 from core.chunker import (
     VIDEO_EXTENSIONS,
@@ -102,7 +110,7 @@ def compose_srt_text(cues: List[Dict[str, Any]]) -> str:
 
 class PipelineState:
     def __init__(self) -> None:
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.ffmpeg_path, self.ffprobe_path = find_ffmpeg_binaries(PROJECT_ROOT)
         self.os_name = get_os_name()
         self.enc_info = (
@@ -206,6 +214,11 @@ class PipelineState:
             if len(self.logs) > 250:
                 self.logs = self.logs[-250:]
         print(line, flush=True)
+        try:
+            with open(PROJECT_ROOT / "gui_log.txt", "a", encoding="utf-8") as lf:
+                lf.write(line + "\n")
+        except Exception:
+            pass
 
 
 STATE = PipelineState()
@@ -481,6 +494,8 @@ def _run_pipeline_worker() -> None:
     try:
         ac_params = _get_effective_anti_copyright_params(STATE.settings)
         speed = ac_params["speed_factor"]
+        with STATE.lock:
+            STATE.status_phase = "📐 Đang phân tích và tính toán các mốc thời lượng..."
         plan = build_target_chunks(
             items=STATE.items,
             project_name=STATE.project_name,
@@ -493,6 +508,8 @@ def _run_pipeline_worker() -> None:
         all_chunks = plan["chunks"]
         if not all_chunks:
             STATE.add_log("⚠️ Không có tập video nào trong danh sách để xử lý!")
+            with STATE.lock:
+                STATE.status_phase = "⚠️ Không có video trong danh sách"
             return
 
         # Lọc theo danh sách các Phần được tích chọn (selected_chunks)
@@ -503,8 +520,10 @@ def _run_pipeline_worker() -> None:
             chunks = all_chunks
 
         if not chunks:
-            STATE.add_log("⚠️ Bạn chưa tích chọn Phần cắt nào để xuất! Hãy tích chọn ít nhất 1 phần.")
-            return
+            # Nếu chưa chọn phần nào, tự động chọn các phần đầu tiên thay vì dừng lại
+            chunks = all_chunks[:10]
+            with STATE.lock:
+                STATE.selected_chunks = [c["chunk_index"] for c in chunks]
 
         RAW_DIR.mkdir(parents=True, exist_ok=True)
         PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -517,7 +536,8 @@ def _run_pipeline_worker() -> None:
             STATE.total_eps = total_eps
             STATE.finished_outputs = []
             STATE.error_message = ""
-            STATE.started_at = time.time()
+            if not STATE.started_at:
+                STATE.started_at = time.time()
 
         STATE.add_log(
             f"🚀 Bắt đầu cắt & xử lý {total_chunks}/{len(all_chunks)} Phần đã chọn "
@@ -569,7 +589,8 @@ def _run_pipeline_worker() -> None:
                 if is_local and Path(source_str).is_file():
                     in_file = Path(source_str)
                 else:
-                    STATE.status_phase = f"[Phần {c_idx}] Đang tải đoạn {global_ep_counter}/{total_eps}"
+                    with STATE.lock:
+                        STATE.status_phase = f"[Phần {c_idx}] ⬇️ Đang kết nối tải đoạn {global_ep_counter}/{total_eps}: {ep['name']}"
                     STATE.add_log(f"⬇️ [Đoạn {global_ep_counter}/{total_eps}] Đang tải: {ep['name']}")
                     from core.downloader import download_all_videos
 
@@ -580,6 +601,10 @@ def _run_pipeline_worker() -> None:
                             base = ((ep_num - 1) / max(1, total_eps)) * 92.0
                             step = (p_val / 100.0) * (40.0 / max(1, total_eps))
                             STATE.overall_pct = min(99.0, round(base + step, 1))
+                            STATE.status_phase = (
+                                f"[Phần {c_idx}] ⬇️ Đang tải video: {p_val:.1f}% "
+                                f"({ep_num}/{total_eps} đoạn)"
+                            )
 
                     dl_list = download_all_videos(
                         links=[source_str],
@@ -589,6 +614,8 @@ def _run_pipeline_worker() -> None:
                         settings=STATE.settings,
                         slice_range=(slice_start, slice_dur) if slice_dur > 0 else None,
                         progress_callback=_dl_progress,
+                        stop_checker=lambda: STATE.stop_requested,
+                        proc_callback=lambda p: setattr(STATE, "current_proc", p),
                     )
                     in_file = dl_list[0]
                     used_remote_slice = True
@@ -793,10 +820,17 @@ def _run_pipeline_worker() -> None:
             STATE.add_log(f"🏆 [HOÀN THÀNH] Đã xuất xong {total_chunks} phần vào thư mục output/!")
 
     except Exception as exc:
+        import traceback
+        tb_str = traceback.format_exc()
         with STATE.lock:
             STATE.error_message = str(exc)
             STATE.status_phase = f"❌ Có lỗi xảy ra: {exc}"
         STATE.add_log(f"❌ [LỖI] {exc}")
+        try:
+            with open(PROJECT_ROOT / "gui_log.txt", "a", encoding="utf-8") as lf:
+                lf.write(f"\n[TRACEBACK]\n{tb_str}\n")
+        except Exception:
+            pass
     finally:
         with STATE.lock:
             STATE.is_running = False
@@ -829,20 +863,43 @@ def _run_gui_ffmpeg(
                 proc.terminate()
                 break
             line = line.strip()
+            ep_pct = None
             if line.startswith("out_time_us=") or line.startswith("out_time_ms="):
                 val_str = line.split("=", 1)[1].strip()
                 if val_str.isdigit():
                     cur_us = min(int(val_str), total_us)
                     ep_pct = round((cur_us / total_us) * 100.0, 1)
-                    with STATE.lock:
-                        STATE.current_ep_pct = ep_pct
-                        if not is_concat:
-                            base = ((ep_idx - 1) / max(1, total_eps)) * 92.0
-                            step = (ep_pct / 100.0) * (92.0 / max(1, total_eps))
-                            STATE.overall_pct = min(99.0, round(base + step, 1))
-                        else:
-                            STATE.overall_pct = min(99.5, round(92.0 + (ep_pct * 0.08), 1))
-    return proc.wait()
+            elif line.startswith("out_time="):
+                val_str = line.split("=", 1)[1].strip()
+                parts = val_str.split(":")
+                if len(parts) == 3:
+                    try:
+                        h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+                        cur_sec = h * 3600 + m * 60 + s
+                        ep_pct = round(min(100.0, max(0.0, (cur_sec / max(1.0, expected_duration)) * 100.0)), 1)
+                    except Exception:
+                        pass
+
+            if ep_pct is not None:
+                with STATE.lock:
+                    STATE.current_ep_pct = ep_pct
+                    c_num = STATE.current_chunk_idx or 1
+                    if not is_concat:
+                        base = ((ep_idx - 1) / max(1, total_eps)) * 92.0
+                        step = (ep_pct / 100.0) * (92.0 / max(1, total_eps))
+                        STATE.overall_pct = min(99.0, round(base + step, 1))
+                        STATE.status_phase = (
+                            f"[Phần {c_num}] 🎬 Lách bản quyền: {ep_pct:.1f}% ({ep_idx}/{total_eps} đoạn)"
+                        )
+                    else:
+                        STATE.overall_pct = min(99.5, round(92.0 + (ep_pct * 0.08), 1))
+                        STATE.status_phase = (
+                            f"[Phần {c_num}] ⚡ Ghép nối file hoàn chỉnh: {ep_pct:.1f}%"
+                        )
+    rc = proc.wait()
+    with STATE.lock:
+        STATE.current_proc = None
+    return rc
 
 
 class GuiRequestHandler(BaseHTTPRequestHandler):
@@ -938,6 +995,9 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.end_headers()
             self.wfile.write(content)
             return
@@ -952,8 +1012,8 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/system":
             free_gb = check_disk_space(PROJECT_ROOT, min_recommended_gb=50.0)
             plan = self._compute_plan()
-            self._send_json(
-                {
+            with STATE.lock:
+                sys_data = {
                     "os": STATE.os_name,
                     "arch": platform.machine(),
                     "gpu_label": STATE.enc_info["label"],
@@ -961,43 +1021,42 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     "project_name": STATE.project_name,
                     "target_hours": STATE.target_hours,
                     "chunk_mode": STATE.chunk_mode,
-                    "selected_chunks": STATE.selected_chunks,
-                    "settings": STATE.settings,
+                    "selected_chunks": list(STATE.selected_chunks),
+                    "settings": dict(STATE.settings),
                     "plan": plan,
-                    "srt_rows": STATE.srt_rows,
+                    "srt_rows": list(STATE.srt_rows),
                     "active_srt_path": STATE.active_srt_path,
-                    "active_video_for_srt": _get_srt_target(),
-                    "available_videos": _list_available_preview_videos(),
-                    "available_audios": _list_available_tts_audios(),
-                    "finished_outputs": STATE.finished_outputs,
+                    "finished_outputs": list(STATE.finished_outputs),
                     "srt_status_msg": STATE.srt_status_msg,
                 }
-            )
+            sys_data["active_video_for_srt"] = _get_srt_target()
+            sys_data["available_videos"] = _list_available_preview_videos()
+            sys_data["available_audios"] = _list_available_tts_audios()
+            self._send_json(sys_data)
             return
 
         if path == "/api/status":
             with STATE.lock:
                 elapsed = int(time.time() - STATE.started_at) if STATE.is_running and STATE.started_at else 0
-                self._send_json(
-                    {
-                        "is_running": STATE.is_running,
-                        "status_phase": STATE.status_phase,
-                        "current_chunk_idx": STATE.current_chunk_idx,
-                        "total_chunks": STATE.total_chunks,
-                        "current_ep_idx": STATE.current_ep_idx,
-                        "total_eps": STATE.total_eps,
-                        "current_ep_pct": STATE.current_ep_pct,
-                        "overall_pct": STATE.overall_pct,
-                        "elapsed_hms": format_hms(elapsed),
-                        "logs": STATE.logs[-60:],
-                        "finished_outputs": STATE.finished_outputs,
-                        "active_video_for_srt": _get_srt_target(),
-                        "available_videos": _list_available_preview_videos(),
-                    "available_audios": _list_available_tts_audios(),
-                        "error_message": STATE.error_message,
-                        "srt_status_msg": STATE.srt_status_msg,
-                    }
-                )
+                st_data = {
+                    "is_running": STATE.is_running,
+                    "status_phase": STATE.status_phase,
+                    "current_chunk_idx": STATE.current_chunk_idx,
+                    "total_chunks": STATE.total_chunks,
+                    "current_ep_idx": STATE.current_ep_idx,
+                    "total_eps": STATE.total_eps,
+                    "current_ep_pct": STATE.current_ep_pct,
+                    "overall_pct": STATE.overall_pct,
+                    "elapsed_hms": format_hms(elapsed),
+                    "logs": list(STATE.logs[-60:]),
+                    "finished_outputs": list(STATE.finished_outputs),
+                    "error_message": STATE.error_message,
+                    "srt_status_msg": STATE.srt_status_msg,
+                }
+            st_data["active_video_for_srt"] = _get_srt_target()
+            st_data["available_videos"] = _list_available_preview_videos()
+            st_data["available_audios"] = _list_available_tts_audios()
+            self._send_json(st_data)
             return
 
         self.send_error(404)
@@ -1628,34 +1687,14 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     with STATE.lock:
                         STATE.srt_status_msg = f"🗣️ Đang tạo file .MP3 thuyết minh: {done_c}/{total_c} câu ({pct}%) — {snippet}"
 
-                (generate_tts_from_srt if not out_mp3.is_file() or out_mp3.stat().st_mtime < srt_file.stat().st_mtime else (lambda *a, **kw: str(out_mp3)))(
-                    str(srt_file),
-                    str(out_mp3),
-                    voice=voice,
-                    total_video_duration=video_duration,
-                    progress_callback=_on_tts_prog,
-                )
-                if False: generate_tts_from_srt(
-                    str(srt_file),
-                    str(out_mp3),
-                    voice=voice,
-                    total_video_duration=video_duration,
-                    progress_callback=_on_tts_prog,
-                )
-                if False:
-                    pass
-                pass
-                (generate_tts_from_srt if not out_mp3.is_file() or out_mp3.stat().st_mtime < srt_file.stat().st_mtime else (lambda *a, **kw: str(out_mp3)))(
-                    str(srt_file),
-                    str(out_mp3),
-                    voice=voice,
-                    total_video_duration=video_duration,
-                    progress_callback=_on_tts_prog,
-                )
-                if False: generate_tts_from_srt(
-                    str(srt_file), str(out_mp3), voice=voice,
-                    total_video_duration=video_duration,
-                )
+                if not out_mp3.is_file() or out_mp3.stat().st_mtime < srt_file.stat().st_mtime:
+                    generate_tts_from_srt(
+                        str(srt_file),
+                        str(out_mp3),
+                        voice=voice,
+                        total_video_duration=video_duration,
+                        progress_callback=_on_tts_prog,
+                    )
 
                 dubbed_mp4 = None
                 if not only_mp3:
@@ -1686,24 +1725,6 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "message": str(exc_tts)})
             return
 
-        if False:
-                dubbed_mp4 = OUTPUT_DIR / f"{Path(target_vid).stem}_Lồng_Tiếng_Việt.mp4"
-                mux_dubbed_video(str(target_vid), str(out_mp3), str(srt_file), str(dubbed_mp4))
-                STATE.add_log(f"🎬 Đã ghép Thuyết Minh + Phụ Đề đã sửa vào video: {dubbed_mp4.name}")
-
-                self._send_json(
-                    {
-                        "ok": True,
-                        "audio_vi": str(out_mp3),
-                        "dubbed_video": str(dubbed_mp4) if dubbed_mp4 else None,
-                        "message": f"🎉 Đã tạo xong file thuyết minh: {out_mp3.name}"
-                        + (f" và video lồng tiếng: {dubbed_mp4.name}" if dubbed_mp4 else ""),
-                    }
-                )
-            except Exception as exc:
-                self._send_json({"ok": False, "message": str(exc)})
-            return
-
         if path == "/api/start":
             with STATE.lock:
                 if STATE.is_running:
@@ -1716,6 +1737,9 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 STATE.stop_requested = False
                 STATE.overall_pct = 0.0
                 STATE.current_ep_pct = 0.0
+                STATE.started_at = time.time()
+                STATE.status_phase = "🚀 Đang chuẩn bị cắt & xuất video..."
+                STATE.add_log("🚀 Bắt đầu tiến trình cắt & xuất các phần đã chọn...")
 
             worker = threading.Thread(target=_run_pipeline_worker, daemon=True)
             worker.start()
@@ -1741,25 +1765,33 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def _compute_plan(self, reset_selection: bool = False) -> Dict[str, Any]:
-        ac_params = _get_effective_anti_copyright_params(STATE.settings)
+        with STATE.lock:
+            items_copy = list(STATE.items)
+            proj_name = STATE.project_name
+            tgt_hours = STATE.target_hours
+            chk_mode = STATE.chunk_mode
+            sett_copy = dict(STATE.settings)
+            sel_chunks = list(STATE.selected_chunks)
+
+        ac_params = _get_effective_anti_copyright_params(sett_copy)
         plan = build_target_chunks(
-            items=STATE.items,
-            project_name=STATE.project_name,
-            target_hours=STATE.target_hours,
-            chunk_mode=STATE.chunk_mode,
-            trim_start_sec=float(STATE.settings.get("trim_start_sec", 0.0)),
-            trim_end_sec=float(STATE.settings.get("trim_end_sec", 0.0)),
+            items=items_copy,
+            project_name=proj_name,
+            target_hours=tgt_hours,
+            chunk_mode=chk_mode,
+            trim_start_sec=float(sett_copy.get("trim_start_sec", 0.0)),
+            trim_end_sec=float(sett_copy.get("trim_end_sec", 0.0)),
             speed_factor=ac_params["speed_factor"],
         )
         chunks = plan.get("chunks", [])
-        if reset_selection or not STATE.selected_chunks:
-            # Mặc định tự động tích chọn 10 phần đầu tiên (ví dụ Phần 1 -> Phần 10 của mức 15 phút)
-            STATE.selected_chunks = [c["chunk_index"] for c in chunks[:10]]
-        else:
-            valid_ids = {c["chunk_index"] for c in chunks}
-            STATE.selected_chunks = [idx for idx in STATE.selected_chunks if idx in valid_ids]
-            if not STATE.selected_chunks and chunks:
+        with STATE.lock:
+            if reset_selection or not STATE.selected_chunks:
                 STATE.selected_chunks = [c["chunk_index"] for c in chunks[:10]]
+            else:
+                valid_ids = {c["chunk_index"] for c in chunks}
+                STATE.selected_chunks = [idx for idx in STATE.selected_chunks if idx in valid_ids]
+                if not STATE.selected_chunks and chunks:
+                    STATE.selected_chunks = [c["chunk_index"] for c in chunks[:10]]
         return plan
 
     def _send_current_plan(self, reset_selection: bool = False) -> None:
@@ -1778,15 +1810,16 @@ def start_gui_server(port: int = 8765, open_browser: bool = True) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     SRT_WORK_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Tự động giải phóng tiến trình gui_server cũ trên cổng 8765 (nếu có) để luôn dùng bản code mới nhất
+    # Tự động giải phóng tiến trình gui_server cũ trên cổng 8765-8768 (nếu có) để luôn dùng bản code mới nhất
     sys_name = platform.system().lower()
     if sys_name == "darwin":
         try:
-            res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, check=False)
-            for pid_str in (res.stdout or "").splitlines():
-                pid = int(pid_str.strip())
-                if pid != os.getpid():
-                    os.kill(pid, 9)
+            for check_p in range(port, port + 4):
+                res = subprocess.run(["lsof", "-ti", f":{check_p}"], capture_output=True, text=True, check=False)
+                for pid_str in (res.stdout or "").splitlines():
+                    pid = int(pid_str.strip())
+                    if pid != os.getpid():
+                        os.kill(pid, 9)
             time.sleep(0.3)
         except Exception:
             pass

@@ -229,6 +229,8 @@ def download_bilibili_slice_via_ffmpeg(
     ffmpeg_path: str,
     slice_range: Optional[Tuple[float, float]] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
+    stop_checker: Optional[Callable[[], bool]] = None,
+    proc_callback: Optional[Callable[[Any], None]] = None,
 ) -> Path:
     """
     Tải trực tiếp toàn bộ hoặc chỉ 1 phân đoạn (ví dụ 15 phút: slice_range=(start_sec, dur_sec))
@@ -349,17 +351,44 @@ def download_bilibili_slice_via_ffmpeg(
             text=True,
             encoding="utf-8",
             errors="replace",
+            bufsize=1,
         )
+        if proc_callback:
+            proc_callback(proc)
+        if progress_callback:
+            progress_callback(1.0)
+
         total_us = max(1, int(seg["t"] * 1_000_000))
         if proc.stdout:
             for line in proc.stdout:
+                if stop_checker and stop_checker():
+                    proc.terminate()
+                    break
                 line = line.strip()
+                if not progress_callback:
+                    continue
                 if line.startswith("out_time_us=") or line.startswith("out_time_ms="):
                     val = line.split("=", 1)[1].strip()
-                    if val.isdigit() and progress_callback:
-                        pct = min(100.0, (int(val) / total_us) * 100.0)
+                    if val.isdigit():
+                        pct = min(100.0, max(1.0, (int(val) / total_us) * 100.0))
                         progress_callback(pct)
+                elif line.startswith("out_time="):
+                    val = line.split("=", 1)[1].strip()
+                    parts = val.split(":")
+                    if len(parts) == 3:
+                        try:
+                            h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+                            cur_sec = h * 3600 + m * 60 + s
+                            pct = min(100.0, max(1.0, (cur_sec / max(1.0, seg["t"])) * 100.0))
+                            progress_callback(pct)
+                        except Exception:
+                            pass
+
         rc = proc.wait()
+        if proc_callback:
+            proc_callback(None)
+        if stop_checker and stop_checker():
+            return output_mp4
         if rc != 0 or not seg_out.is_file():
             raise RuntimeError(f"Tải phân đoạn Bilibili thất bại (cid={seg['cid']}, mã lỗi={rc})")
         part_files.append(seg_out)
