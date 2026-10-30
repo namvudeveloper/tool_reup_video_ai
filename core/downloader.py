@@ -69,6 +69,8 @@ def download_all_videos(
     settings: Dict[str, Any],
     slice_range: Tuple[float, float] | None = None,
     progress_callback: Any = None,
+    stop_checker: Any = None,
+    proc_callback: Any = None,
 ) -> List[Path]:
     """
     Bước 1: Tải danh sách video chất lượng cao (1080p/4K) về thư mục raw/
@@ -117,6 +119,8 @@ def download_all_videos(
                 ffmpeg_path=ffmpeg_path,
                 slice_range=slice_range,
                 progress_callback=progress_callback,
+                stop_checker=stop_checker,
+                proc_callback=proc_callback,
             )
             size_mb = target_mp4.stat().st_size / (1024 * 1024)
             log_success(f"[Tập {idx}/{total}] Hoàn tất tải Bilibili: {target_mp4.name} ({size_mb:.1f} MB)")

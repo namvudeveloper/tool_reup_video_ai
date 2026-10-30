@@ -1021,9 +1021,41 @@
           />
         </div>
 
+        <div style="margin-top: 16px; padding: 16px; border: 1px solid #10b981; border-radius: 12px; background: rgba(16,185,129,.07);">
+          <div style="font-weight: 800; color: #6ee7b7; margin-bottom: 10px;">⚡ Chạy tuần tự từng phần — A → Z</div>
+          <div class="form-group">
+            <label for="workflowModeSelect">Kết quả cần tạo cho mỗi phần:</label>
+            <select id="workflowModeSelect" class="form-input" onchange="updateWorkflowLabel(); saveSettingsToServer()">
+              <option value="full">A → Z: Video → SRT tiếng Việt → MP3 thuyết minh</option>
+              <option value="srt">Video → SRT tiếng Việt</option>
+              <option value="video">Chỉ cắt và xuất video</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="workflowModelSelect">Mô hình nhận diện:</label>
+              <select id="workflowModelSelect" class="form-input" onchange="syncWorkflowSetting('model', this.value)">
+                <option value="base">Base · Nhanh nhất</option>
+                <option value="small" selected>Small · Cân bằng</option>
+                <option value="medium">Medium · Chính xác hơn, chạy lâu</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="workflowVoiceSelect">Giọng thuyết minh:</label>
+              <select id="workflowVoiceSelect" class="form-input" onchange="syncWorkflowSetting('voice', this.value)">
+                <option value="vi-VN-NamMinhNeural">Nam · NamMinh</option>
+                <option value="vi-VN-HoaiMyNeural">Nữ · HoaiMy</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--muted); line-height: 1.7;">
+            Xong video, SRT và MP3 của phần 1 mới chuyển sang phần 2. Mỗi phần nằm trong <b>output/Tên_phim/Phan_01/</b>.
+            Nhận diện trên máy; dịch qua Google; giọng đọc qua Microsoft Edge TTS. Có thể chọn lại các phần bên dưới để làm tiếp bước còn thiếu.
+          </div>
+        </div>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
           <button class="start-mega-btn" id="startBtn" onclick="startPipeline()">
-            🚀 BẮT ĐẦU CẮT & XUẤT CÁC PHẦN ĐÃ CHỌN
+            🚀 CHẠY A → Z CÁC PHẦN ĐÃ CHỌN
           </button>
           <button
             class="btn btn-danger"
@@ -1063,9 +1095,17 @@
 
         <div id="finishedBox" style="display: none; margin-top: 14px;">
           <div style="font-weight: 800; font-size: 13.5px; color: #10b981; margin-bottom: 6px;">
-            🎉 Các Phần Đã Xuất Xong (Trong thư mục output/):
+            📦 Các phần đã xuất — chọn nhiều phần để tạo SRT / MP3
           </div>
-          <div id="finishedList" class="chunk-grid" style="max-height: 180px;"></div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0;">
+            <button class="btn btn-outline" onclick="selectExportedParts(true)">Chọn tất cả</button>
+            <button class="btn btn-outline" onclick="selectExportedParts(false)">Bỏ chọn</button>
+            <span id="exportedSelectionLabel" style="font-size:12px; color:var(--muted);"></span>
+            <button class="btn btn-primary" data-workflow-action onclick="runBatchAssets('srt')">📝 Tạo SRT các phần đã chọn</button>
+            <button class="btn btn-primary" data-workflow-action onclick="runBatchAssets('mp3')">🔊 Tạo MP3 từ SRT đã có</button>
+            <button class="btn btn-success" data-workflow-action onclick="runBatchAssets('full')">⚡ Làm tiếp SRT → MP3</button>
+          </div>
+          <div id="finishedList" class="chunk-grid" style="max-height: 440px;"></div>
         </div>
 
         <div class="log-box" id="logBox">
@@ -1144,11 +1184,6 @@
               style="position: absolute; left: -6px; top: -6px; width: 16px; height: 16px; background: #6366f1; border: 2px solid #fff; border-radius: 4px; cursor: nwse-resize;"
             ></div>
           </div>
-          <div style="display:none;"
-            style="position: absolute; left: 9%; width: 82%; top: 86%; height: 10%; border: 1.5px dashed rgba(99, 102, 241, 0.85); border-radius: 6px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); background: rgba(15, 23, 42, 0.22); pointer-events: none; display: flex; align-items: center; justify-content: center; color: rgba(165, 180, 252, 0.85); font-size: 11px; font-weight: 700;"
-          >
-            🌫️ Vùng làm mờ chữ Trung Quốc
-          </div>
           <div
             id="liveSubOverlay"
             onmousedown="startSubBoxDrag(event)"
@@ -1166,22 +1201,7 @@
               style="display: none; background: rgba(15, 23, 42, 0.78); color: #cbd5e1; font-size: 13px; padding: 2px 10px; border-radius: 6px; pointer-events: none;"
             ></div>
           </div>
-          <div style="display:none;"
-            style="position: absolute; left: 5%; right: 5%; bottom: 54px; text-align: center; pointer-events: none; display: none;"
-          >
-            <div
-              id="liveSubViText"
-              style="display: inline-block; background: rgba(0, 0, 0, 0.78); color: #fde047; font-weight: 800; font-size: 17px; padding: 5px 14px; border-radius: 8px; text-shadow: 0 2px 4px #000; margin-bottom: 4px;"
-              data-legacy-sub="1"
-            ></div>
-            <br />
-            <div
-              id="liveSubZhText"
-              style="display: inline-block; background: rgba(15, 23, 42, 0.78); color: #cbd5e1; font-size: 13px; padding: 2px 10px; border-radius: 6px;"
-            ></div>
-          </div>
         </div>
-        <div style="text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 8px;">
           <span>💡 <b>Mẹo Kéo Thả Như CapCut:</b> Dùng chuột <b>kéo trực tiếp Khung Mờ Chữ Trung</b> (hoặc kéo góc <b>↘️</b> để co giãn) và <b>kéo thả dòng Chữ Phụ Đề Tiếng Việt</b> ngay trên màn hình video! Lăn con lăn chuột trên chữ để phóng to/thu nhỏ.</span>
           <button class="btn btn-outline" style="padding: 4px 10px; font-size: 11.5px;" onclick="resetCapcutOverlayPositions()">🎯 Đưa Khung Mờ & Chữ SRT Về Giữa Đáy</button>
@@ -1191,7 +1211,7 @@
       </div>
       <div class="form-group" style="max-width: 390px;">
         <label>🎙️ Mô hình nhận diện tiếng Trung:</label>
-        <select id="whisperModelSelect" class="form-input" onchange="saveSettingsToServer()">
+        <select id="whisperModelSelect" class="form-input" onchange="syncWorkflowSetting('model', this.value)">
           <option value="base">Nhanh nhất · Base</option>
           <option value="small" selected>Cân bằng · Small</option>
           <option value="medium">Chính xác hơn · Medium (tải lâu)</option>
@@ -1253,10 +1273,7 @@
         </table>
       </div>
 
-      <!-- Thanh tạo giọng đọc Thuyết minh từ bản Sub đã sửa -->
-      <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); padding: 14px 18px; border-radius: 12px;">
-        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-        <!-- BÀN DỰNG & XUẤT VIDEO HOÀN CHỈNH THAY THẾ CAPCUT (CAPCUT STUDIO) -->
+      <!-- BÀN DỰNG & XUẤT VIDEO HOÀN CHỈNH THAY THẾ CAPCUT (CAPCUT STUDIO) -->
       <div style="margin-top: 18px; background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92)); border: 1.5px solid #6366f1; border-radius: 14px; padding: 18px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; border-bottom: 1px solid #334155; padding-bottom: 10px;">
           <div style="font-weight: 900; font-size: 16px; color: #fde047; display: flex; align-items: center; gap: 8px;">
@@ -1275,15 +1292,12 @@
           </div>
           <div style="display: grid; grid-template-columns: 1.1fr 1.4fr; gap: 12px; align-items: center;">
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <select id="ttsVoiceSelect" class="form-input" style="flex: 1; min-width: 210px;">
+              <select id="ttsVoiceSelect" class="form-input" style="flex: 1; min-width: 210px;" onchange="syncWorkflowSetting('voice', this.value)">
                 <option value="vi-VN-NamMinhNeural" selected>🎙️ Giọng Nam Trầm Ấm (NamMinh)</option>
                 <option value="vi-VN-HoaiMyNeural">🎙️ Giọng Nữ Truyền Cảm (HoaiMy)</option>
               </select>
               <button class="btn btn-primary" style="padding: 10px 16px; font-size: 13.5px; font-weight: 800; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);" id="ttsOnlyMp3Btn" onclick="generateOnlyMp3FromSrt()">
                 🔊 3A. TẠO FILE .MP3 THUYẾT MINH (XUẤT RIÊNG .MP3)
-              </button>
-              <button style="display:none;"
-                🔊 3A. Tạo / Cập Nhật File .MP3
               </button>
             </div>
 
@@ -1373,31 +1387,17 @@
           </button>
         </div>
       </div>
-      <div style="display:none;">
-        <span style="font-weight: 800; font-size: 14.5px; color: #a7f3d0;">
-            🗣️ Bước Cuối: Đọc Thuyết Minh AI Theo Đúng Bản Sub Bạn Đã Sửa:
-          </span>
-          <select id="ttsVoiceSelect" class="form-input" style="width: 290px;">
-            <option value="vi-VN-NamMinhNeural" selected>🎙️ Giọng Nam Trầm Ấm (vi-VN-NamMinhNeural)</option>
-            <option value="vi-VN-HoaiMyNeural">🎙️ Giọng Nữ Truyền Cảm (vi-VN-HoaiMyNeural)</option>
-          </select>
-        </div>
-
-        <button class="btn btn-success" style="padding: 12px 22px; font-size: 15px;" id="ttsRenderBtn" onclick="renderTtsFromEditedSrt()">
-          🚀 3. TẠO FILE THUYẾT MINH (.MP3) & GHÉP VÀO VIDEO
-        </button>
-      </div>
-      </div>
-        </button>
-      </div>
     </div>
   </section>
 
   <!-- HỘP THOẠI DÁN LINK ONLINE -->
-  <div class="modal-backdrop" id="linkModal">
+  <div class="modal-backdrop" id="linkModal" onclick="if (event.target === this) closeLinkModal();">
     <div class="modal-card">
-      <h3 style="font-size: 18px; font-weight: 800;">🔗 Dán Link Video Bilibili (36 Tiếng) / YouTube</h3>
-      <p style="font-size: 13px; color: var(--muted); margin-top: 4px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h3 style="font-size: 18px; font-weight: 800; margin: 0;">🔗 Dán Link Video Bilibili (36 Tiếng) / YouTube</h3>
+        <button type="button" class="btn btn-outline" style="padding: 4px 10px; font-size: 14px;" onclick="closeLinkModal()">✕</button>
+      </div>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 4px; margin-bottom: 12px;">
         Mỗi dòng 1 link. Máy sẽ tự đọc tổng thời lượng và chia thành các phần 15 phút để bạn chọn:
       </p>
       <textarea
@@ -1405,9 +1405,10 @@
         class="link-area"
         placeholder="https://www.bilibili.com/video/BV1...&#10;https://www.youtube.com/watch?v=..."
       ></textarea>
+      <div id="linkModalStatus" style="display: none; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; font-weight: 700;"></div>
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
-        <button class="btn btn-outline" onclick="closeLinkModal()">Hủy</button>
-        <button class="btn btn-success" onclick="submitLinks()">✅ Thêm & Chia Phần 15 Phút</button>
+        <button type="button" id="cancelLinksBtn" class="btn btn-outline" onclick="closeLinkModal()">Hủy</button>
+        <button type="button" id="submitLinksBtn" class="btn btn-success" onclick="submitLinks()">✅ Thêm & Chia Phần 15 Phút</button>
       </div>
     </div>
   </div>
@@ -1417,6 +1418,10 @@
     let currentTargetHours = 0.25; // 15 phút mặc định
     let currentPlan = null;
     let selectedChunkSet = new Set();
+    let selectedOutputPaths = new Set();
+    let seenOutputPaths = new Set();
+    let currentFinishedOutputs = [];
+    let finishedSignature = "";
     let srtRowsData = [];
     let srtTargetPath = "";
     let currentPreviewLoadedPath = "";
@@ -1771,7 +1776,8 @@
       const outputs = data.finished_outputs || [];
       const avail = data.available_videos || [];
       const local = (data.plan?.items || currentPlan?.items || []).find((item) => item.is_local);
-      srtTargetPath = data.active_video_for_srt || outputs.at(-1)?.path || local?.source || "";
+      const lastOut = outputs && outputs.length > 0 ? outputs[outputs.length - 1] : null;
+      srtTargetPath = data.active_video_for_srt || (lastOut ? lastOut.path : "") || local?.source || "";
       const label = document.getElementById("srtTargetLabel");
       if (srtTargetPath) {
         const filename = srtTargetPath.split(/[\\/]/).pop();
@@ -1834,6 +1840,12 @@
         currentTargetHours = data.target_hours || 0.25;
         document.getElementById("cookiesBrowserSelect").value = data.settings?.cookies_from_browser || "";
         document.getElementById("whisperModelSelect").value = data.settings?.whisper_model || "small";
+        document.getElementById("workflowModelSelect").value = data.settings?.whisper_model || "small";
+        document.getElementById("workflowVoiceSelect").value = data.settings?.tts_voice || "vi-VN-NamMinhNeural";
+        document.getElementById("ttsVoiceSelect").value = data.settings?.tts_voice || "vi-VN-NamMinhNeural";
+        document.getElementById("workflowModeSelect").value = data.settings?.workflow_mode || "full";
+        updateWorkflowLabel();
+        renderFinishedOutputs(data.finished_outputs || []);
         const ac = data.settings?.anti_copyright || {};
         document.getElementById("antiCopyrightLevel").value = ac.enabled === false ? "off" : (ac.level || "hardcore");
         if (ac.speed_factor !== undefined) document.getElementById("acSpeedInput").value = ac.speed_factor;
@@ -2048,6 +2060,8 @@
           clean_temp_after_done: document.getElementById("cleanTempCheck").checked,
           cookies_from_browser: document.getElementById("cookiesBrowserSelect").value,
           whisper_model: document.getElementById("whisperModelSelect").value,
+          workflow_mode: document.getElementById("workflowModeSelect").value,
+          tts_voice: document.getElementById("workflowVoiceSelect").value,
           anti_copyright: {
             enabled: levelVal !== "off",
             level: levelVal === "off" ? "basic" : levelVal,
@@ -2697,77 +2711,277 @@
     }
 
     function openLinkModal() {
-      document.getElementById("linkModal").classList.add("active");
+      const modal = document.getElementById("linkModal");
+      const statusBox = document.getElementById("linkModalStatus");
+      if (statusBox) {
+        statusBox.style.display = "none";
+        statusBox.textContent = "";
+      }
+      modal.classList.add("active");
+      const ta = document.getElementById("linksTextarea");
+      if (ta) ta.focus();
     }
 
     function closeLinkModal() {
-      document.getElementById("linkModal").classList.remove("active");
+      const modal = document.getElementById("linkModal");
+      modal.classList.remove("active");
+      const statusBox = document.getElementById("linkModalStatus");
+      if (statusBox) statusBox.style.display = "none";
+      const submitBtn = document.getElementById("submitLinksBtn");
+      const cancelBtn = document.getElementById("cancelLinksBtn");
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "✅ Thêm & Chia Phần 15 Phút";
+      }
+      if (cancelBtn) cancelBtn.disabled = false;
     }
 
     async function submitLinks() {
-      const raw = document.getElementById("linksTextarea").value || "";
+      const textarea = document.getElementById("linksTextarea");
+      const submitBtn = document.getElementById("submitLinksBtn");
+      const cancelBtn = document.getElementById("cancelLinksBtn");
+      const statusBox = document.getElementById("linkModalStatus");
+
+      const raw = (textarea ? textarea.value : "") || "";
       const links = raw
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-      if (links.length > 0) {
-        await saveSettingsToServer();
+
+      if (links.length === 0) {
+        closeLinkModal();
+        return;
+      }
+
+      // Phản hồi trực quan ngay lập tức: vô hiệu hóa nút bấm và thông báo đang kết nối
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "⏳ Đang đọc link Bilibili / YouTube...";
+      }
+      if (cancelBtn) cancelBtn.disabled = true;
+
+      if (statusBox) {
+        statusBox.style.display = "block";
+        statusBox.style.background = "rgba(59, 130, 246, 0.15)";
+        statusBox.style.border = "1px solid #3b82f6";
+        statusBox.style.color = "#93c5fd";
+        statusBox.textContent = "⏳ Đang kết nối Bilibili lấy thời lượng video, vui lòng chờ...";
+      }
+
+      try {
+        await saveSettingsToServer().catch((err) => console.warn("saveSettingsToServer non-fatal:", err));
+
         const res = await fetch("/api/add-links", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ links }),
         });
+
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          alert(data.message || "Không đọc được link video. Hãy kiểm tra link hoặc chọn file trên máy.");
+          const errMsg = data.message || "Không đọc được video từ link. Hãy kiểm tra lại link hoặc chọn file trên máy.";
+          if (statusBox) {
+            statusBox.style.display = "block";
+            statusBox.style.background = "rgba(239, 68, 68, 0.15)";
+            statusBox.style.border = "1px solid #ef4444";
+            statusBox.style.color = "#fca5a5";
+            statusBox.textContent = "❌ " + errMsg;
+          } else {
+            alert(errMsg);
+          }
           return;
         }
+
         if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
         if (data.plan) renderPlan(data.plan);
+
+        if (textarea) textarea.value = "";
+        closeLinkModal();
+      } catch (err) {
+        console.error("submitLinks error:", err);
+        const errMsg = "Lỗi kết nối máy chủ: " + (err.message || String(err));
+        if (statusBox) {
+          statusBox.style.display = "block";
+          statusBox.style.background = "rgba(239, 68, 68, 0.15)";
+          statusBox.style.border = "1px solid #ef4444";
+          statusBox.style.color = "#fca5a5";
+          statusBox.textContent = "❌ " + errMsg;
+        } else {
+          alert(errMsg);
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "✅ Thêm & Chia Phần 15 Phút";
+        }
+        if (cancelBtn) cancelBtn.disabled = false;
       }
-      document.getElementById("linksTextarea").value = "";
-      closeLinkModal();
+    }
+
+    function updateWorkflowLabel() {
+      const mode = document.getElementById("workflowModeSelect").value;
+      document.getElementById("startBtn").textContent = {
+        full: "🚀 CHẠY A → Z CÁC PHẦN ĐÃ CHỌN",
+        srt: "🚀 XUẤT VIDEO + SRT CÁC PHẦN ĐÃ CHỌN",
+        video: "🚀 CẮT & XUẤT VIDEO CÁC PHẦN ĐÃ CHỌN",
+      }[mode];
+    }
+
+    async function syncWorkflowSetting(kind, value) {
+      const ids = kind === "model" ? ["whisperModelSelect", "workflowModelSelect"] : ["ttsVoiceSelect", "workflowVoiceSelect"];
+      ids.forEach((id) => { document.getElementById(id).value = value; });
+      await saveSettingsToServer();
+    }
+
+    function updateExportedSelectionLabel() {
+      document.getElementById("exportedSelectionLabel").textContent = `Đã chọn ${selectedOutputPaths.size}/${currentFinishedOutputs.length} phần`;
+    }
+
+    function selectExportedParts(all) {
+      selectedOutputPaths = new Set(all ? currentFinishedOutputs.map((f) => f.path) : []);
+      finishedSignature = "";
+      renderFinishedOutputs(currentFinishedOutputs);
+    }
+
+    function renderFinishedOutputs(outputs) {
+      const signature = JSON.stringify(outputs);
+      if (signature === finishedSignature) return;
+      finishedSignature = signature;
+      currentFinishedOutputs = outputs;
+      const paths = new Set(outputs.map((f) => f.path));
+      selectedOutputPaths = new Set([...selectedOutputPaths].filter((path) => paths.has(path)));
+      outputs.forEach((f) => {
+        if (!seenOutputPaths.has(f.path)) selectedOutputPaths.add(f.path);
+        seenOutputPaths.add(f.path);
+      });
+      document.getElementById("finishedBox").style.display = outputs.length ? "block" : "none";
+      const list = document.getElementById("finishedList");
+      list.replaceChildren();
+      outputs.forEach((f) => {
+        const card = document.createElement("div");
+        card.className = "chunk-card selected";
+        card.style.cssText = "cursor:default; display:block;";
+        const title = document.createElement("label");
+        title.style.cssText = "display:flex; gap:10px; align-items:center; font-weight:800; color:#6ee7b7;";
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = selectedOutputPaths.has(f.path);
+        check.onchange = () => {
+          if (check.checked) selectedOutputPaths.add(f.path); else selectedOutputPaths.delete(f.path);
+          updateExportedSelectionLabel();
+        };
+        title.append(check, document.createTextNode(f.name));
+        card.append(title);
+        const info = document.createElement("div");
+        info.className = "chunk-card-sub";
+        info.style.margin = "8px 0";
+        const progress = f.status === "error" ? "❌ Cần thử lại" : f.status === "stopped" ? "⏹ Đã dừng" : f.status === "running" ? "⏳ Đang làm" : "✅ Đã xong";
+        info.textContent = `${f.duration_human || ""} · ${f.size_label || ""} · ${progress} | Video ✓ · SRT ${f.srt_path ? "✓" : "—"} · MP3 ${f.audio_vi ? "✓" : "—"}`;
+        card.append(info);
+        if (f.error) {
+          const error = document.createElement("div"); error.style.color = "#fca5a5"; error.textContent = f.error; card.append(error);
+        }
+        const folder = document.createElement("div");
+        folder.className = "chunk-card-sub";
+        folder.textContent = f.folder || f.path;
+        card.append(folder);
+        const actions = document.createElement("div");
+        actions.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;";
+        const preview = document.createElement("button");
+        preview.className = "btn btn-primary"; preview.textContent = "▶️ Video";
+        preview.onclick = () => previewSpecificVideo(f.path); actions.append(preview);
+        [["📝 SRT", f.srt_path], ["🔊 MP3", f.audio_vi]].forEach(([label, path]) => {
+          if (!path) return;
+          const link = document.createElement("a"); link.className = "btn btn-outline"; link.textContent = label;
+          link.href = `/api/video-stream?path=${encodeURIComponent(path)}`;
+          link.download = path.split(/[\\/]/).pop(); actions.append(link);
+        });
+        const open = document.createElement("button"); open.className = "btn btn-success";
+        open.textContent = "📂 Mở thư mục phần"; open.onclick = () => openOutputFolder(f.folder || ""); actions.append(open);
+        card.append(actions); list.append(card);
+      });
+      updateExportedSelectionLabel();
+    }
+
+    async function runBatchAssets(mode) {
+      if (!selectedOutputPaths.size) { alert("Hãy tích chọn ít nhất một video đã xuất."); return; }
+      document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = true; });
+      try {
+        await saveSettingsToServer();
+        const res = await fetch("/api/workflow/batch", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: [...selectedOutputPaths], mode }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || "Chưa thể chạy các phần đã chọn.");
+        document.getElementById("statusPhaseText").textContent = `Đang chuẩn bị ${data.count} phần...`;
+        document.getElementById("stopBtn").style.display = "inline-flex";
+        await pollStatus();
+      } catch (error) {
+        alert(error.message);
+        document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = false; });
+      }
     }
 
     async function startPipeline() {
-      await saveSettingsToServer();
-      const res = await fetch("/api/start", { method: "POST", body: "{}" });
-      const data = await res.json();
-      if (!data.ok) {
-        alert(data.message || "Chưa thể bắt đầu!");
-        return;
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      startBtn.disabled = true;
+      document.getElementById("statusPhaseText").textContent = "Trạng thái: 🚀 Đang khởi động cắt & xuất video...";
+      stopBtn.style.display = "inline-flex";
+
+      try {
+        await saveSettingsToServer();
+        const res = await fetch("/api/start", { method: "POST", body: "{}" });
+        const data = await res.json();
+        if (!data.ok) {
+          alert(data.message || "Chưa thể bắt đầu!");
+          startBtn.disabled = false;
+          stopBtn.style.display = "none";
+          document.getElementById("statusPhaseText").textContent = "Trạng thái: Sẵn sàng";
+          return;
+        }
+      } catch (err) {
+        alert("⚠️ Không thể kết nối với máy chủ tool: " + err.message + "\nHãy kiểm tra cửa sổ Terminal chay_tool.command xem tool có đang chạy không!");
+        startBtn.disabled = false;
+        stopBtn.style.display = "none";
+        document.getElementById("statusPhaseText").textContent = "Trạng thái: Mất kết nối máy chủ";
       }
-      document.getElementById("startBtn").disabled = true;
-      document.getElementById("stopBtn").style.display = "inline-flex";
     }
 
     async function stopPipeline() {
       await fetch("/api/stop", { method: "POST", body: "{}" });
     }
 
-    async function openOutputFolder() {
-      await fetch("/api/open-output", { method: "POST", body: "{}" });
+    async function openOutputFolder(path = "") {
+      await fetch("/api/open-output", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({path}) });
     }
 
     async function pollStatus() {
       try {
         const res = await fetch("/api/status");
-        const st = await res.json();
-        renderSrtTarget(st);
-        if (st.srt_status_msg && st.srt_status_msg.includes("Đang ")) {
-          window.currentSrtPhase = st.srt_status_msg;
+        if (!res.ok) {
+          document.getElementById("statusPhaseText").textContent = "Trạng thái: ⚠️ Mất kết nối máy chủ (Đang thử lại...)";
+          return;
         }
+        const st = await res.json();
 
-        document.getElementById("statusPhaseText").textContent = `Trạng thái: ${st.status_phase}`;
-        document.getElementById("elapsedTimeText").textContent = `⏱ ${st.elapsed_hms}`;
+        // 1. CẬP NHẬT TRỰC TIẾP TIẾN TRÌNH & THỜI GIAN LÊN GIAO DIỆN (ƯU TIÊN HÀNG ĐẦU)
+        if (st.status_phase) {
+          document.getElementById("statusPhaseText").textContent = `Trạng thái: ${st.status_phase}`;
+        }
+        document.getElementById("elapsedTimeText").textContent = `⏱ ${st.elapsed_hms || "00:00:00"}`;
 
-        document.getElementById("overallProgFill").style.width = `${st.overall_pct}%`;
-        document.getElementById("overallProgText").textContent = `${st.overall_pct}%`;
+        const ovPct = parseFloat(st.overall_pct || 0);
+        document.getElementById("overallProgFill").style.width = `${ovPct}%`;
+        document.getElementById("overallProgText").textContent = `${ovPct}%`;
 
-        document.getElementById("epProgFill").style.width = `${st.current_ep_pct}%`;
-        document.getElementById("epProgText").textContent = `${st.current_ep_pct}%`;
+        const epPct = parseFloat(st.current_ep_pct || 0);
+        document.getElementById("epProgFill").style.width = `${epPct}%`;
+        document.getElementById("epProgText").textContent = `${epPct}%`;
 
-        document.getElementById("startBtn").disabled = st.is_running;
+        document.getElementById("startBtn").disabled = !!st.is_running;
+        document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = !!st.is_running; });
         document.getElementById("stopBtn").style.display = st.is_running ? "inline-flex" : "none";
 
         if (st.logs && st.logs.length > 0) {
@@ -2776,32 +2990,21 @@
           logBox.scrollTop = logBox.scrollHeight;
         }
 
-        const finBox = document.getElementById("finishedBox");
-        const finList = document.getElementById("finishedList");
-        if (st.finished_outputs && st.finished_outputs.length > 0) {
-          finBox.style.display = "block";
-          finList.innerHTML = st.finished_outputs
-            .map(
-              (f) => `
-            <div class="chunk-card selected" style="cursor:default;">
-              <div>
-                <div class="chunk-card-title" style="color: #6ee7b7;">✅ ${f.name}</div>
-                <div class="chunk-card-sub">Thời lượng: <b>${f.duration_human}</b> | Dung lượng: <b>${f.size_label}</b></div>
-              </div>
-              <div style="display:flex; gap:6px;">
-                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="previewSpecificVideo('${(f.path || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}')">
-                  ▶️ Xem Trước
-                </button>
-                <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="openOutputFolder()">
-                  📂 Lấy File
-                </button>
-              </div>
-            </div>
-          `
-            )
-            .join("");
+        renderFinishedOutputs(st.finished_outputs || []);
+
+        // 2. Cập nhật các thành phần phụ (preview & SRT) - bọc trong try riêng biệt để không gián đoạn thanh tiến trình
+        try {
+          renderSrtTarget(st);
+          if (st.srt_status_msg && st.srt_status_msg.includes("Đang ")) {
+            window.currentSrtPhase = st.srt_status_msg;
+          }
+        } catch (subErr) {
+          console.warn("renderSrtTarget non-critical error:", subErr);
         }
-      } catch (e) {}
+
+      } catch (e) {
+        console.error("pollStatus error:", e);
+      }
     }
 
     fetchSystemInit();

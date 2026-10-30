@@ -26,9 +26,18 @@ import sys
 import tempfile
 import time
 import wave
-import wave
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from core.part_workflow import check_stop
+
+# Tự động nạp thư viện từ môi trường ảo .venv (hỗ trợ cả macOS & Windows)
+_project_root = Path(__file__).resolve().parent
+for _vbase in (_project_root / ".venv" / "lib", _project_root / ".venv" / "Lib"):
+    if _vbase.is_dir():
+        for _sp in _vbase.glob("**/site-packages"):
+            if _sp.is_dir() and str(_sp) not in sys.path:
+                sys.path.insert(0, str(_sp))
 
 try:
     import srt
@@ -204,6 +213,8 @@ def transcribe_chinese(
     output_srt_zh: str,
     device: str = "auto",
     model_size: str = "auto",
+    progress_callback: Optional[Callable[[float, int], None]] = None,
+    stop_checker: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Bước 2: Nhận diện giọng nói tiếng Trung (language='zh') từ file WAV 16kHz
@@ -240,6 +251,7 @@ def transcribe_chinese(
         samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
 
     def _run_whisper(dev: str, ctype: str) -> List[srt.Subtitle]:
+        check_stop(stop_checker)
         mdl = WhisperModel(
             actual_model,
             device=dev,
@@ -256,7 +268,12 @@ def transcribe_chinese(
         )
         subs: List[srt.Subtitle] = []
         idx_local = 1
+        audio_duration = max(0.001, len(samples) / 16000.0)
+        last_reported_bucket = -1
+        if progress_callback:
+            progress_callback(0.0, 0)
         for seg in segs:
+            check_stop(stop_checker)
             text = (seg.text or "").strip()
             if not text:
                 continue
@@ -274,7 +291,15 @@ def transcribe_chinese(
                 f"    [{idx_local:03d}] {srt.timedelta_to_srt_timestamp(start_td)} --> "
                 f"{srt.timedelta_to_srt_timestamp(end_td)} | {text}"
             )
+            if progress_callback:
+                percent = min(100.0, float(seg.end) / audio_duration * 100.0)
+                bucket = int(percent // 5)
+                if bucket > last_reported_bucket:
+                    progress_callback(percent, idx_local)
+                    last_reported_bucket = bucket
             idx_local += 1
+        if progress_callback:
+            progress_callback(100.0, len(subs))
         return subs
 
     try:
@@ -337,6 +362,7 @@ def translate_srt(
     batch_size: int = 20,
     sleep_sec: float = 0.15,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    stop_checker: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Bước 3: Đọc file .srt tiếng Trung bằng thư viện `srt`, dịch nội dung từ 'zh-CN'
@@ -367,6 +393,7 @@ def translate_srt(
 
     def _translate_text(q: str) -> str:
         for attempt in range(3):
+            check_stop(stop_checker)
             try:
                 return _google_gtx_translate(q, source="zh-CN", target="vi")
             except Exception:
@@ -383,6 +410,7 @@ def translate_srt(
 
     # Xử lý theo từng cụm (batch) để tăng tốc độ và giảm số lần gọi API
     for start_idx in range(0, total, batch_size):
+        check_stop(stop_checker)
         batch = subtitles[start_idx : start_idx + batch_size]
         batch_texts = [sub.content.replace("\n", " ").strip() for sub in batch]
 
@@ -477,6 +505,7 @@ def generate_tts_from_srt(
     voice: str = "vi-VN-NamMinhNeural",
     total_video_duration: float = 0.0,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    stop_checker: Optional[Callable[[], bool]] = None,
 ) -> str:
     """
     Bước 4: Đọc từng câu thoại trong file .srt tiếng Việt, dùng `edge-tts` tạo giọng đọc
@@ -539,23 +568,25 @@ def generate_tts_from_srt(
             done_counter = 0
 
             async def _worker(idx: int, sub: srt.Subtitle) -> Tuple[int, srt.Subtitle, Optional[Path]]:
+                check_stop(stop_checker)
                 clean_line = " ".join(sub.content.splitlines()).strip()
                 if not clean_line or not any(ch.isalnum() for ch in clean_line):
                     return (idx, sub, None)
                 seg_mp3 = temp_dir / f"seg_{idx:04d}.mp3"
                 async with sem:
+                    check_stop(stop_checker)
                     ok = await _synthesize_edge_tts_segment(clean_line, seg_mp3, voice)
+                    check_stop(stop_checker)
                 if not ok:
-                    print(f"    ⚠️ Bỏ qua câu {idx}/{total} không có âm thanh: {clean_line[:50]}")
-                    return (idx, sub, None)
+                    raise RuntimeError(
+                        f"Không tạo được giọng đọc câu {idx}/{total}: {clean_line[:80]}. "
+                        "Đã dừng để tránh xuất MP3 bị mất câu; SRT vẫn được giữ lại."
+                    )
                 print(f"    🎙️ Đã tạo voice [{idx:03d}/{total:03d}]: {clean_line[:55]}")
                 nonlocal done_counter
                 done_counter += 1
                 if progress_callback:
-                    try:
-                        progress_callback(done_counter, total, clean_line[:45])
-                    except Exception:
-                        pass
+                    progress_callback(done_counter, total, clean_line[:45])
                 return (idx, sub, seg_mp3)
 
             tasks = [_worker(idx, sub) for idx, sub in enumerate(subtitles, start=1)]
@@ -572,6 +603,7 @@ def generate_tts_from_srt(
         initial_samples = int(round(max(0.0, total_video_duration) * sample_rate))
         timeline = np.zeros(initial_samples, dtype=np.float32)
         for i, (idx, sub, seg_mp3) in enumerate(rendered_items):
+            check_stop(stop_checker)
             if seg_mp3 is None:
                 continue
             if not seg_mp3.is_file():
@@ -679,6 +711,7 @@ def generate_tts_from_srt(
             *codec_args,
             str(out_audio),
         ]
+        check_stop(stop_checker)
         res = subprocess.run(cmd_final, capture_output=True, text=True, check=False)
         if res.returncode != 0 or not out_audio.is_file():
             raise RuntimeError(f"Không thể xuất file thuyết minh cuối cùng: {res.stderr}")

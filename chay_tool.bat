@@ -64,11 +64,11 @@ if exist ".venv\Scripts\python.exe" (
     set "VENV_PY=%PY_CMD%"
 )
 
-if not exist ".venv\.deps_installed" (
-    echo [INFO] Dang cai dat thu vien ho tro ^(yt-dlp, rich^)...
+if not exist ".venv\.deps_installed_win" (
+    echo [INFO] Dang cai dat thu vien ho tro tren Windows ^(yt-dlp, rich, whisper, edge-tts^)...
     "%VENV_PY%" -m pip install -r requirements.txt -q >nul 2>&1
     if !ERRORLEVEL! EQU 0 (
-        echo ok > ".venv\.deps_installed"
+        echo ok > ".venv\.deps_installed_win"
     )
 )
 
