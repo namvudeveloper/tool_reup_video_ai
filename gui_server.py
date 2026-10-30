@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import platform
 import re
@@ -9,6 +10,7 @@ import threading
 import time
 import urllib.parse
 import webbrowser
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -38,6 +40,7 @@ from core.processor import (
     probe_media_info,
 )
 from core.system_check import check_disk_space, find_ffmpeg_binaries, get_os_name, select_video_encoder
+from core.part_workflow import WorkflowStopped, part_folder, process_part, safe_name
 
 if sys.platform == "win32":
     try:
@@ -150,6 +153,8 @@ class PipelineState:
             "clean_temp_after_done": True,
             "cookies_from_browser": "",
             "whisper_model": "small",
+            "workflow_mode": "full",
+            "tts_voice": "vi-VN-NamMinhNeural",
             "blur_sub": {
                 "mode": "delogo",
                 "y_pct": 86.0,
@@ -166,6 +171,7 @@ class PipelineState:
 
         # Trạng thái chạy ngầm
         self.is_running: bool = False
+        self.manual_asset_busy: bool = False
         self.stop_requested: bool = False
         self.current_proc: Optional[subprocess.Popen] = None
         self.status_phase: str = "Sẵn sàng"
@@ -185,21 +191,41 @@ class PipelineState:
         if not OUTPUT_DIR.is_dir():
             return
         mp4s = sorted(
-            (p for p in OUTPUT_DIR.glob("*.mp4") if p.is_file() and not p.name.endswith("_Lồng_Tiếng_Việt.mp4")),
+            (p for p in OUTPUT_DIR.rglob("*.mp4") if p.is_file()
+             and ".work" not in p.parts and ".pending" not in p.stem
+             and not p.name.endswith(("_Lồng_Tiếng_Việt.mp4", "_CapCut_Hoan_Chinh.mp4"))),
             key=lambda p: natural_sort_key(p.name),
         )
+        grouped_names = {p.name for p in mp4s if p.parent != OUTPUT_DIR}
+        mp4s = [p for p in mp4s if p.parent != OUTPUT_DIR or p.name not in grouped_names]
         for idx, p in enumerate(mp4s, start=1):
             size_gb = p.stat().st_size / (1024**3)
             size_mb = p.stat().st_size / (1024**2)
             size_label = f"{size_gb:.2f} GB" if size_gb >= 1.0 else f"{size_mb:.1f} MB"
+            match = re.search(r"_Phan_(\d+)$", p.stem, re.IGNORECASE)
+            vi = p.with_name(p.stem + ".vi.srt")
+            if not vi.is_file() and p.parent == OUTPUT_DIR:
+                vi = SRT_WORK_DIR / f"{p.stem}.vi.srt"
+            mp3 = p.with_name(p.stem + ".thuyet_minh.mp3")
+            duration, _ = probe_media_info(self.ffprobe_path, p)
+            try:
+                checkpoint = json.loads((p.parent / ".work/progress.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                checkpoint = {}
             self.finished_outputs.append(
                 {
-                    "chunk_index": idx,
+                    "chunk_index": int(match.group(1)) if match else idx,
                     "name": p.name,
                     "path": str(p.resolve()),
-                    "duration_hms": "00:15:00",
-                    "duration_human": "Đã xuất sẵn",
+                    "duration_hms": format_hms(duration),
+                    "duration_human": format_human_duration(duration),
                     "size_label": size_label,
+                    "folder": str(p.parent.resolve()),
+                    "srt_path": str(vi.resolve()) if vi.is_file() else "",
+                    "audio_vi": str(mp3.resolve()) if mp3.is_file() else "",
+                    "stage": checkpoint.get("stage", "video"),
+                    "status": checkpoint.get("status", "complete"),
+                    "error": checkpoint.get("error", ""),
                 }
             )
         if self.finished_outputs:
@@ -231,7 +257,7 @@ def _get_srt_target() -> str:
     candidates.extend(item.get("source", "") for item in STATE.items if item.get("is_local"))
     if OUTPUT_DIR.is_dir():
         recent_mp4s = sorted(
-            (p for p in OUTPUT_DIR.glob("*.mp4") if p.is_file() and not p.name.endswith("_Lồng_Tiếng_Việt.mp4")),
+            (p for p in OUTPUT_DIR.rglob("*.mp4") if p.is_file() and ".pending" not in p.stem and not p.name.endswith("_Lồng_Tiếng_Việt.mp4")),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
@@ -246,7 +272,7 @@ def _list_available_preview_videos() -> List[Dict[str, str]]:
 
     if OUTPUT_DIR.is_dir():
         out_files = sorted(
-            (p for p in OUTPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS),
+            (p for p in OUTPUT_DIR.rglob("*") if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS and ".pending" not in p.stem),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
@@ -292,8 +318,9 @@ def _list_available_tts_audios() -> List[Dict[str, str]]:
     active_stem = Path(active_vid).stem.lower() if active_vid else ""
 
     files = [
-        p for p in OUTPUT_DIR.iterdir()
-        if p.is_file() and p.suffix.lower() in (".mp3", ".wav", ".m4a")
+        p for p in OUTPUT_DIR.rglob("*")
+        if p.is_file() and ".work" not in p.parts and ".pending" not in p.stem
+        and p.suffix.lower() in (".mp3", ".wav", ".m4a")
     ]
 
     def _sort_key(p: Path) -> Tuple[int, float]:
@@ -489,20 +516,123 @@ def _open_folder_in_os(folder: Path) -> None:
         subprocess.Popen(["xdg-open", str(folder)])
 
 
-def _run_pipeline_worker() -> None:
+def _workflow_fraction(mode: str, stage: str, percent: float) -> float:
+    p = min(1.0, max(0.0, percent / 100.0))
+    if mode == "video":
+        return p
+    if mode == "mp3":
+        return p if stage == "tts" else (1.0 if stage == "complete" else 0.0)
+    ranges = {"video": (0, .30), "transcribe": (.30, .65), "translate": (.65, .80),
+              "srt": (.80, .80), "tts": (.80, 1), "complete": (1, 1)}
+    if mode == "srt":
+        ranges = {"video": (0, .35), "transcribe": (.35, .80), "translate": (.80, 1),
+                  "srt": (1, 1), "complete": (1, 1)}
+    start, end = ranges.get(stage, (0, 0))
+    return start + (end - start) * p
+
+
+def _complete_part_assets(record: Dict[str, Any], folder: Path, mode: str,
+                          settings: Dict[str, Any], position: int, total: int) -> bool:
+    """Publish video/SRT/MP3 as they finish; a failed part can be retried independently."""
+    source = record["path"]
+    c_idx = record["chunk_index"]
+    last_log = None
+
+    def update(stage: str, percent: float, message: str, result: Dict[str, Any]) -> None:
+        nonlocal last_log
+        fraction = _workflow_fraction(mode, stage, percent)
+        with STATE.lock:
+            record.update(result)
+            STATE.current_ep_pct = round(percent, 1)
+            STATE.overall_pct = max(STATE.overall_pct, round((position - 1 + fraction) / total * 100, 1))
+            STATE.status_phase = f"[Phần {c_idx} · {position}/{total}] {message}"
+            STATE.srt_status_msg = STATE.status_phase
+            # Replace the legacy entry when the files have moved into a part folder.
+            if record not in STATE.finished_outputs:
+                STATE.finished_outputs[:] = [r for r in STATE.finished_outputs if r.get("path") not in {source, record["path"]}]
+                STATE.finished_outputs.append(record)
+        bucket = (stage, int(percent // 10), result["status"])
+        if bucket != last_log:
+            STATE.add_log(f"[Phần {c_idx}] {message}")
+            last_log = bucket
+
+    try:
+        process_part(
+            Path(source), folder, mode=mode,
+            model=str(settings.get("whisper_model", "small")),
+            voice=str(settings.get("tts_voice", "vi-VN-NamMinhNeural")),
+            legacy_subtitles=SRT_WORK_DIR, progress=update,
+            stop_checker=lambda: STATE.stop_requested,
+        )
+        return True
+    except WorkflowStopped:
+        raise
+    except Exception as exc:
+        with STATE.lock:
+            record.update(status="error", error=str(exc), folder=str(folder.resolve()))
+            if record not in STATE.finished_outputs:
+                STATE.finished_outputs[:] = [r for r in STATE.finished_outputs if r.get("path") != source]
+                STATE.finished_outputs.append(record)
+        STATE.add_log(f"❌ Phần {c_idx}: {exc}. Giữ các file đã xong và tiếp tục phần sau.")
+        return False
+
+
+def _run_asset_batch_worker(jobs: List[Dict[str, Any]], mode: str, settings: Dict[str, Any]) -> None:
+    failed = 0
+    try:
+        for position, job in enumerate(jobs, start=1):
+            if STATE.stop_requested:
+                break
+            with STATE.lock:
+                STATE.current_chunk_idx = job["chunk_index"]
+            video = Path(job["path"])
+            if video.parent.parent == OUTPUT_DIR or (video.parent / ".work/progress.json").is_file():
+                folder = video.parent
+            else:
+                project = re.sub(r"_Phan_\d+$", "", video.stem, flags=re.IGNORECASE)
+                folder = part_folder(OUTPUT_DIR, project, job["chunk_index"])
+            if not _complete_part_assets(job, folder, mode, settings, position, len(jobs)):
+                failed += 1
+        with STATE.lock:
+            if STATE.stop_requested:
+                STATE.status_phase = "⏹ Đã dừng; chọn lại các phần để chạy tiếp từ bước còn thiếu."
+            else:
+                STATE.overall_pct = 100
+                STATE.status_phase = f"✅ Xong {len(jobs) - failed}/{len(jobs)} phần" + (f" · {failed} phần cần thử lại" if failed else " · Đã lưu theo từng thư mục phần")
+                STATE.error_message = f"{failed} phần chưa hoàn tất. Xem thông báo ở từng phần." if failed else ""
+            STATE.add_log(STATE.status_phase)
+    except WorkflowStopped:
+        STATE.status_phase = "⏹ Đã dừng; các file hoàn tất đã được giữ lại."
+    except Exception as exc:
+        STATE.error_message = str(exc)
+        STATE.status_phase = f"❌ {exc}"
+        STATE.add_log(STATE.status_phase)
+    finally:
+        with STATE.lock:
+            STATE.is_running = False
+            STATE.current_proc = None
+
+
+def _run_pipeline_worker(run_config: Optional[Dict[str, Any]] = None) -> None:
     """Luồng chạy ngầm xử lý chỉ các Phần (Chunks) đã được người dùng tích chọn (ví dụ 10 phần đầu của 15 phút)."""
     try:
-        ac_params = _get_effective_anti_copyright_params(STATE.settings)
+        with STATE.lock:
+            config = run_config or {"settings": deepcopy(STATE.settings), "items": deepcopy(STATE.items),
+                                    "project_name": STATE.project_name, "target_hours": STATE.target_hours,
+                                    "chunk_mode": STATE.chunk_mode, "selected_chunks": list(STATE.selected_chunks)}
+        settings = config["settings"]
+        mode = str(settings.get("workflow_mode", "full"))
+        ac_params = _get_effective_anti_copyright_params(settings)
         speed = ac_params["speed_factor"]
         with STATE.lock:
             STATE.status_phase = "📐 Đang phân tích và tính toán các mốc thời lượng..."
         plan = build_target_chunks(
-            items=STATE.items,
-            project_name=STATE.project_name,
-            target_hours=STATE.target_hours,
-            chunk_mode=STATE.chunk_mode,
-            trim_start_sec=float(STATE.settings.get("trim_start_sec", 0.0)),
-            trim_end_sec=float(STATE.settings.get("trim_end_sec", 0.0)),
+            items=config["items"],
+            project_name=config["project_name"],
+            target_hours=config["target_hours"],
+            chunk_mode=config["chunk_mode"],
+            trim_start_sec=float(settings.get("trim_start_sec", 0.0)),
+            trim_end_sec=float(settings.get("trim_end_sec", 0.0)),
             speed_factor=speed,
         )
         all_chunks = plan["chunks"]
@@ -513,7 +643,7 @@ def _run_pipeline_worker() -> None:
             return
 
         # Lọc theo danh sách các Phần được tích chọn (selected_chunks)
-        selected_set = set(STATE.selected_chunks or [])
+        selected_set = set(config["selected_chunks"])
         if selected_set:
             chunks = [c for c in all_chunks if c["chunk_index"] in selected_set]
         else:
@@ -547,12 +677,13 @@ def _run_pipeline_worker() -> None:
             f"⚡ Tăng tốc phần cứng: {STATE.enc_info['label']} | Chế độ Lách YouTube: {ac_params['level'].upper()}"
         )
 
-        trim_start = float(STATE.settings.get("trim_start_sec", 0.0) or 0.0)
-        trim_end = float(STATE.settings.get("trim_end_sec", 0.0) or 0.0)
-        bitrate = str(STATE.settings.get("video_bitrate", "8M") or "8M")
+        trim_start = float(settings.get("trim_start_sec", 0.0) or 0.0)
+        trim_end = float(settings.get("trim_end_sec", 0.0) or 0.0)
+        bitrate = str(settings.get("video_bitrate", "8M") or "8M")
         encoder = STATE.enc_info["encoder"]
 
         global_ep_counter = 0
+        failed_assets = 0
 
         for run_idx, chunk in enumerate(chunks, start=1):
             if STATE.stop_requested:
@@ -562,6 +693,13 @@ def _run_pipeline_worker() -> None:
             out_filename = chunk["output_name"]
             chunk_items = chunk["items"]
             chunk_norm_files: List[Path] = []
+            folder = part_folder(OUTPUT_DIR, config["project_name"], c_idx)
+            folder.mkdir(parents=True, exist_ok=True)
+
+            def video_progress(percent: float) -> None:
+                fraction = _workflow_fraction(mode, "video", percent)
+                with STATE.lock:
+                    STATE.overall_pct = round((run_idx - 1 + fraction) / total_chunks * 100, 1)
 
             with STATE.lock:
                 STATE.current_chunk_idx = c_idx
@@ -571,7 +709,7 @@ def _run_pipeline_worker() -> None:
                 f"━━━ 📦 PHẦN {c_idx} ({run_idx}/{total_chunks}): Thời lượng {chunk['total_human']} ➔ {out_filename} ━━━"
             )
 
-            for ep in chunk_items:
+            for local_ep_idx, ep in enumerate(chunk_items, start=1):
                 if STATE.stop_requested:
                     break
 
@@ -598,9 +736,7 @@ def _run_pipeline_worker() -> None:
                         p_val = round(min(100.0, max(0.0, pct)), 1)
                         with STATE.lock:
                             STATE.current_ep_pct = p_val
-                            base = ((ep_num - 1) / max(1, total_eps)) * 92.0
-                            step = (p_val / 100.0) * (40.0 / max(1, total_eps))
-                            STATE.overall_pct = min(99.0, round(base + step, 1))
+                            video_progress((local_ep_idx - 1 + p_val / 100 * .4) / len(chunk_items) * 95)
                             STATE.status_phase = (
                                 f"[Phần {c_idx}] ⬇️ Đang tải video: {p_val:.1f}% "
                                 f"({ep_num}/{total_eps} đoạn)"
@@ -608,10 +744,10 @@ def _run_pipeline_worker() -> None:
 
                     dl_list = download_all_videos(
                         links=[source_str],
-                        raw_dir=RAW_DIR / f"c{c_idx:03d}_ep{global_ep_counter:03d}",
+                        raw_dir=RAW_DIR / hashlib.sha256(json.dumps([source_str, slice_start, slice_dur]).encode()).hexdigest()[:12] / f"c{c_idx:03d}",
                         project_root=PROJECT_ROOT,
                         ffmpeg_path=STATE.ffmpeg_path,
-                        settings=STATE.settings,
+                        settings=settings,
                         slice_range=(slice_start, slice_dur) if slice_dur > 0 else None,
                         progress_callback=_dl_progress,
                         stop_checker=lambda: STATE.stop_requested,
@@ -620,7 +756,9 @@ def _run_pipeline_worker() -> None:
                     in_file = dl_list[0]
                     used_remote_slice = True
 
-                norm_file = PROCESSED_DIR / f"norm_c{c_idx:03d}_ep{global_ep_counter:03d}.mp4"
+                # Give each run its own intermediates; older settings or sources
+                # must never cause an unrelated normalized clip to be reused.
+                norm_file = PROCESSED_DIR / f"norm_{int(STATE.started_at * 1000)}_c{c_idx:03d}_ep{global_ep_counter:03d}.mp4"
                 if norm_file.is_file() and norm_file.stat().st_size > 100_000:
                     STATE.add_log(
                         f"✅ [Đoạn {global_ep_counter}/{total_eps}] Đã chuẩn hóa sẵn ({in_file.name}) ➔ Dùng lại ngay."
@@ -628,7 +766,7 @@ def _run_pipeline_worker() -> None:
                     chunk_norm_files.append(norm_file)
                     with STATE.lock:
                         STATE.current_ep_pct = 100.0
-                        STATE.overall_pct = round((global_ep_counter / total_eps) * 92.0, 1)
+                        video_progress(local_ep_idx / len(chunk_items) * 95)
                     continue
 
                 STATE.status_phase = (
@@ -650,7 +788,7 @@ def _run_pipeline_worker() -> None:
                         keep_duration = duration - trim_start - trim_end
 
                 expected_out_dur = max(1.0, keep_duration / speed if speed > 0 else keep_duration)
-                vf_chain, af_chain = _build_filters(STATE.settings, has_audio)
+                vf_chain, af_chain = _build_filters(settings, has_audio)
 
                 def _build_cmd(active_enc: str) -> List[str]:
                     cmd = [
@@ -707,11 +845,16 @@ def _run_pipeline_worker() -> None:
                     )
                     return cmd
 
-                rc = _run_gui_ffmpeg(_build_cmd(encoder), expected_out_dur, global_ep_counter, total_eps)
+                def encoding_progress(percent: float) -> None:
+                    video_progress((local_ep_idx - 1 + .4 + percent / 100 * .6) / len(chunk_items) * 95)
+
+                rc = _run_gui_ffmpeg(_build_cmd(encoder), expected_out_dur, global_ep_counter, total_eps,
+                                     progress_callback=encoding_progress)
                 if rc != 0 and not STATE.stop_requested and encoder != "libx264":
                     STATE.add_log("⚠️ Chuyển sang chế độ CPU (libx264) cho đoạn này...")
                     rc = _run_gui_ffmpeg(
-                        _build_cmd("libx264"), expected_out_dur, global_ep_counter, total_eps
+                        _build_cmd("libx264"), expected_out_dur, global_ep_counter, total_eps,
+                        progress_callback=encoding_progress,
                     )
 
                 if STATE.stop_requested:
@@ -731,9 +874,10 @@ def _run_pipeline_worker() -> None:
             if STATE.stop_requested:
                 break
 
-            final_out = OUTPUT_DIR / out_filename
+            final_out = folder / out_filename
+            pending_out = final_out.with_name(final_out.stem + ".pending.mp4")
             if len(chunk_norm_files) == 1:
-                shutil.copy2(chunk_norm_files[0], final_out)
+                shutil.copy2(chunk_norm_files[0], pending_out)
             else:
                 concat_txt = PROCESSED_DIR / f"concat_chunk_{c_idx:03d}.txt"
                 lines = []
@@ -766,7 +910,7 @@ def _run_pipeline_worker() -> None:
                     "-1",
                     "-movflags",
                     "+faststart",
-                    str(final_out),
+                    str(pending_out),
                 ]
                 rc = _run_gui_ffmpeg(
                     concat_cmd,
@@ -774,10 +918,17 @@ def _run_pipeline_worker() -> None:
                     global_ep_counter,
                     total_eps,
                     is_concat=True,
+                    progress_callback=lambda percent: video_progress(95 + percent * .05),
                 )
-                if rc != 0 or not final_out.is_file():
+                if STATE.stop_requested:
+                    pending_out.unlink(missing_ok=True)
+                    break
+                if rc != 0 or not pending_out.is_file():
                     raise RuntimeError(f"Ghép nối Phần {c_idx} ({out_filename}) thất bại!")
                 concat_txt.unlink(missing_ok=True)
+
+            pending_out.replace(final_out)
+            video_progress(100)
 
             out_dur, _ = probe_media_info(STATE.ffprobe_path, final_out)
             out_size_gb = final_out.stat().st_size / (1024**3)
@@ -785,24 +936,30 @@ def _run_pipeline_worker() -> None:
             size_label = f"{out_size_gb:.2f} GB" if out_size_gb >= 1.0 else f"{out_size_mb:.1f} MB"
 
             with STATE.lock:
-                STATE.finished_outputs.append(
-                    {
+                output_record = {
                         "chunk_index": c_idx,
                         "name": out_filename,
                         "path": str(final_out),
                         "duration_hms": format_hms(out_dur),
                         "duration_human": format_human_duration(out_dur),
                         "size_label": size_label,
+                        "folder": str(folder.resolve()), "srt_path": "", "audio_vi": "",
+                        "stage": "video", "status": "complete", "error": "",
                     }
-                )
-                STATE.active_video_for_srt = str(final_out)
+                STATE.finished_outputs.append(output_record)
+                if not STATE.active_srt_path:
+                    STATE.active_video_for_srt = str(final_out)
 
             STATE.add_log(
-                f"🎉 [HOÀN TẤT PHẦN {c_idx}] Đã xuất: output/{out_filename} "
+                f"🎉 [VIDEO PHẦN {c_idx}] Đã xuất: {final_out.relative_to(OUTPUT_DIR)} "
                 f"({format_human_duration(out_dur)} | {size_label})"
             )
 
-            if bool(STATE.settings.get("clean_temp_after_done", True)):
+            if mode != "video":
+                if not _complete_part_assets(output_record, folder, mode, settings, run_idx, total_chunks):
+                    failed_assets += 1
+
+            if bool(settings.get("clean_temp_after_done", True)):
                 for nf in chunk_norm_files:
                     nf.unlink(missing_ok=True)
 
@@ -810,15 +967,19 @@ def _run_pipeline_worker() -> None:
             STATE.status_phase = "Đã tạm dừng (Có thể bấm Bắt Đầu để chạy tiếp)"
             STATE.add_log("⏹ Đã tạm dừng theo yêu cầu.")
         else:
-            if bool(STATE.settings.get("clean_temp_after_done", True)):
+            if bool(settings.get("clean_temp_after_done", True)):
                 shutil.rmtree(PROCESSED_DIR, ignore_errors=True)
                 shutil.rmtree(UPLOAD_CACHE_DIR, ignore_errors=True)
             with STATE.lock:
                 STATE.overall_pct = 100.0
                 STATE.current_ep_pct = 100.0
-                STATE.status_phase = f"🎉 HOÀN THÀNH {total_chunks} PHẦN ĐÃ CHỌN!"
+                STATE.status_phase = f"✅ Xong {total_chunks - failed_assets}/{total_chunks} phần" + (f" · {failed_assets} phần cần thử lại" if failed_assets else " · Đã lưu theo thư mục phần")
+                STATE.error_message = f"{failed_assets} phần chưa hoàn tất SRT/MP3; chọn lại để chạy tiếp." if failed_assets else ""
             STATE.add_log(f"🏆 [HOÀN THÀNH] Đã xuất xong {total_chunks} phần vào thư mục output/!")
 
+    except WorkflowStopped:
+        STATE.status_phase = "⏹ Đã dừng; video/SRT/MP3 đã hoàn tất được giữ lại."
+        STATE.add_log(STATE.status_phase)
     except Exception as exc:
         import traceback
         tb_str = traceback.format_exc()
@@ -843,6 +1004,7 @@ def _run_gui_ffmpeg(
     ep_idx: int,
     total_eps: int,
     is_concat: bool = False,
+    progress_callback: Optional[Callable[[float], None]] = None,
 ) -> int:
     proc = subprocess.Popen(
         cmd,
@@ -881,22 +1043,28 @@ def _run_gui_ffmpeg(
                         pass
 
             if ep_pct is not None:
+                if progress_callback:
+                    progress_callback(ep_pct)
                 with STATE.lock:
                     STATE.current_ep_pct = ep_pct
                     c_num = STATE.current_chunk_idx or 1
                     if not is_concat:
                         base = ((ep_idx - 1) / max(1, total_eps)) * 92.0
                         step = (ep_pct / 100.0) * (92.0 / max(1, total_eps))
-                        STATE.overall_pct = min(99.0, round(base + step, 1))
+                        if not progress_callback:
+                            STATE.overall_pct = min(99.0, round(base + step, 1))
                         STATE.status_phase = (
                             f"[Phần {c_num}] 🎬 Lách bản quyền: {ep_pct:.1f}% ({ep_idx}/{total_eps} đoạn)"
                         )
                     else:
-                        STATE.overall_pct = min(99.5, round(92.0 + (ep_pct * 0.08), 1))
+                        if not progress_callback:
+                            STATE.overall_pct = min(99.5, round(92.0 + (ep_pct * 0.08), 1))
                         STATE.status_phase = (
                             f"[Phần {c_num}] ⚡ Ghép nối file hoàn chỉnh: {ep_pct:.1f}%"
                         )
     rc = proc.wait()
+    if proc.stdout:
+        proc.stdout.close()
     with STATE.lock:
         STATE.current_proc = None
     return rc
@@ -938,6 +1106,7 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             ".mp3": "audio/mpeg",
             ".wav": "audio/wav",
             ".m4a": "audio/mp4",
+            ".srt": "application/x-subrip; charset=utf-8",
         }
         content_type = mime_map.get(ext, "video/mp4")
 
@@ -1026,7 +1195,7 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     "plan": plan,
                     "srt_rows": list(STATE.srt_rows),
                     "active_srt_path": STATE.active_srt_path,
-                    "finished_outputs": list(STATE.finished_outputs),
+                    "finished_outputs": deepcopy(STATE.finished_outputs),
                     "srt_status_msg": STATE.srt_status_msg,
                 }
             sys_data["active_video_for_srt"] = _get_srt_target()
@@ -1049,7 +1218,7 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     "overall_pct": STATE.overall_pct,
                     "elapsed_hms": format_hms(elapsed),
                     "logs": list(STATE.logs[-60:]),
-                    "finished_outputs": list(STATE.finished_outputs),
+                    "finished_outputs": deepcopy(STATE.finished_outputs),
                     "error_message": STATE.error_message,
                     "srt_status_msg": STATE.srt_status_msg,
                 }
@@ -1062,6 +1231,23 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        asset_request = path in {"/api/srt/auto-transcribe", "/api/srt/generate-tts",
+                                 "/api/srt/export-capcut-video", "/api/blur-video-now"}
+        if asset_request:
+            with STATE.lock:
+                if STATE.is_running or STATE.manual_asset_busy:
+                    self._send_json({"ok": False, "message": "Có tác vụ đang chạy. Hãy chờ hoặc bấm Dừng trước khi chạy tác vụ khác."}, status=409)
+                    return
+                STATE.manual_asset_busy = True
+        try:
+            self._dispatch_POST()
+        finally:
+            if asset_request:
+                with STATE.lock:
+                    STATE.manual_asset_busy = False
+
+    def _dispatch_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
@@ -1301,8 +1487,10 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             if vid_path and Path(vid_path).is_file():
                 resolved_vid = Path(vid_path).resolve()
                 stem = resolved_vid.stem.replace("_Lồng_Tiếng_Việt", "")
-                vi_candidate = SRT_WORK_DIR / f"{stem}.vi.srt"
-                zh_candidate = SRT_WORK_DIR / f"{stem}.zh.srt"
+                grouped_vi = resolved_vid.with_name(f"{stem}.vi.srt")
+                vi_candidate = grouped_vi if grouped_vi.is_file() else SRT_WORK_DIR / f"{stem}.vi.srt"
+                grouped_zh = resolved_vid.parent / ".work" / f"{stem}.zh.srt"
+                zh_candidate = grouped_zh if grouped_zh.is_file() else SRT_WORK_DIR / f"{stem}.zh.srt"
                 with STATE.lock:
                     STATE.active_video_for_srt = str(resolved_vid)
                     if vi_candidate.is_file() and vi_candidate.stat().st_size > 10:
@@ -1324,6 +1512,8 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                         STATE.active_srt_path = str(vi_candidate)
                         STATE.srt_status_msg = f"🎬 Đang xem & chỉnh phụ đề cho: {resolved_vid.name} ({len(STATE.srt_rows)} câu)"
                     else:
+                        STATE.srt_rows = []
+                        STATE.active_srt_path = ""
                         STATE.srt_status_msg = f"🎬 Đang xem trước video: {resolved_vid.name}"
             self._send_json(
                 {
@@ -1470,8 +1660,14 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     whisper_model = str(STATE.settings.get("whisper_model", "small") or "small")
                     if whisper_model not in {"base", "small", "medium"}:
                         whisper_model = "small"
-                    set_srt_phase(f"🎙️ Đang tải/khởi tạo Whisper {whisper_model} và nhận diện tiếng Trung. Lần đầu cần tải mô hình...")
-                    transcribe_chinese(str(wav_16k), str(zh_srt), model_size=whisper_model)
+                    set_srt_phase(f"🎙️ Đang khởi tạo Whisper {whisper_model}. Lần đầu có thể cần tải mô hình...")
+                    transcribe_chinese(
+                        str(wav_16k), str(zh_srt), model_size=whisper_model,
+                        progress_callback=lambda percent, count: set_srt_phase(
+                            f"🎙️ Đang nhận diện tiếng Trung bằng Whisper {whisper_model}: "
+                            f"{percent:.0f}% âm thanh, {count} câu"
+                        ),
+                    )
                 set_srt_phase("🌐 Đã nhận diện xong, đang dịch phụ đề sang Tiếng Việt...")
                 translate_srt(
                     str(zh_srt), str(vi_srt),
@@ -1667,7 +1863,10 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             srt_file.parent.mkdir(parents=True, exist_ok=True)
             srt_file.write_text(compose_srt_text(rows), encoding="utf-8")
 
-            out_mp3 = OUTPUT_DIR / f"{srt_file.stem}_thuyet_minh.mp3"
+            if (srt_file.parent / ".work/progress.json").is_file():
+                out_mp3 = srt_file.parent / f"{srt_file.stem.removesuffix('.vi')}.thuyet_minh.mp3"
+            else:
+                out_mp3 = OUTPUT_DIR / f"{srt_file.stem}_thuyet_minh.mp3"
             try:
                 import importlib
                 import audio_sub_pipeline
@@ -1727,12 +1926,21 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/start":
             with STATE.lock:
-                if STATE.is_running:
+                if STATE.is_running or STATE.manual_asset_busy:
                     self._send_json({"ok": False, "message": "Đang trong quá trình xử lý!"})
                     return
                 if not STATE.items:
                     self._send_json({"ok": False, "message": "Chưa có tập video nào trong danh sách!"})
                     return
+                if not STATE.selected_chunks:
+                    self._send_json({"ok": False, "message": "Hãy tích chọn ít nhất một phần cần chạy."}, status=400)
+                    return
+                if STATE.settings.get("workflow_mode", "full") not in {"video", "srt", "full"}:
+                    self._send_json({"ok": False, "message": "Chế độ quy trình không hợp lệ."}, status=400)
+                    return
+                run_config = {"settings": deepcopy(STATE.settings), "items": deepcopy(STATE.items),
+                              "project_name": STATE.project_name, "target_hours": STATE.target_hours,
+                              "chunk_mode": STATE.chunk_mode, "selected_chunks": list(STATE.selected_chunks)}
                 STATE.is_running = True
                 STATE.stop_requested = False
                 STATE.overall_pct = 0.0
@@ -1741,9 +1949,40 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 STATE.status_phase = "🚀 Đang chuẩn bị cắt & xuất video..."
                 STATE.add_log("🚀 Bắt đầu tiến trình cắt & xuất các phần đã chọn...")
 
-            worker = threading.Thread(target=_run_pipeline_worker, daemon=True)
+            worker = threading.Thread(target=_run_pipeline_worker, args=(run_config,), daemon=True)
             worker.start()
             self._send_json({"ok": True})
+            return
+
+        if path == "/api/workflow/batch":
+            mode = str(body.get("mode", "full"))
+            paths = body.get("paths", [])
+            if mode not in {"srt", "mp3", "full"} or not isinstance(paths, list) or not paths:
+                self._send_json({"ok": False, "message": "Hãy chọn video và bước cần chạy."}, status=400)
+                return
+            with STATE.lock:
+                if STATE.is_running or STATE.manual_asset_busy:
+                    self._send_json({"ok": False, "message": "Có tác vụ đang chạy; hãy chờ hoặc bấm Dừng trước."}, status=409)
+                    return
+                known = {str(Path(r["path"]).resolve()): r for r in STATE.finished_outputs}
+                selected_paths = list(dict.fromkeys(str(Path(str(p)).resolve()) for p in paths))
+                if any(p not in known or not Path(p).is_file() for p in selected_paths):
+                    self._send_json({"ok": False, "message": "Video đã chọn không còn trong danh sách đầu ra. Hãy tải lại trang."}, status=400)
+                    return
+                jobs = [dict(known[p]) for p in selected_paths]
+                jobs.sort(key=lambda j: (j.get("chunk_index", 0), natural_sort_key(j["name"])))
+                for index, job in enumerate(jobs, 1):
+                    job.setdefault("chunk_index", index)
+                settings = deepcopy(STATE.settings)
+                STATE.is_running = True
+                STATE.stop_requested = False
+                STATE.started_at = time.time()
+                STATE.total_chunks = len(jobs)
+                STATE.overall_pct = STATE.current_ep_pct = 0
+                STATE.error_message = ""
+                STATE.status_phase = f"Đang chuẩn bị {len(jobs)} video đã chọn..."
+            threading.Thread(target=_run_asset_batch_worker, args=(jobs, mode, settings), daemon=True).start()
+            self._send_json({"ok": True, "count": len(jobs)})
             return
 
         if path == "/api/stop":
@@ -1758,8 +1997,12 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/open-output":
-            _open_folder_in_os(OUTPUT_DIR)
-            self._send_json({"ok": True, "path": str(OUTPUT_DIR)})
+            folder = Path(str(body.get("path", "") or OUTPUT_DIR)).resolve()
+            if not folder.is_relative_to(OUTPUT_DIR.resolve()):
+                self._send_json({"ok": False, "message": "Chỉ mở được thư mục trong output/."}, status=400)
+                return
+            _open_folder_in_os(folder)
+            self._send_json({"ok": True, "path": str(folder)})
             return
 
         self.send_error(404)
@@ -1785,13 +2028,11 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         )
         chunks = plan.get("chunks", [])
         with STATE.lock:
-            if reset_selection or not STATE.selected_chunks:
+            if reset_selection:
                 STATE.selected_chunks = [c["chunk_index"] for c in chunks[:10]]
             else:
                 valid_ids = {c["chunk_index"] for c in chunks}
                 STATE.selected_chunks = [idx for idx in STATE.selected_chunks if idx in valid_ids]
-                if not STATE.selected_chunks and chunks:
-                    STATE.selected_chunks = [c["chunk_index"] for c in chunks[:10]]
         return plan
 
     def _send_current_plan(self, reset_selection: bool = False) -> None:

@@ -10,8 +10,9 @@ env/
 raw/
 temp_processed/
 temp_demo_inputs/
-output/*.mp4
-output/*.mkv
+/output/*
+!/output/.gitkeep
+/gui_log.txt
 
 # OS Metadata
 .DS_Store
