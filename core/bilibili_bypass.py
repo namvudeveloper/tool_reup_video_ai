@@ -199,8 +199,34 @@ def get_bilibili_stream_urls(bvid: str, cid: int) -> Dict[str, Any]:
         )
         audios.sort(key=lambda a: int(a.get("bandwidth", 0) or 0), reverse=True)
 
-        v_url = (videos[0].get("baseUrl") or videos[0].get("base_url")) if videos else None
-        a_url = (audios[0].get("baseUrl") or audios[0].get("base_url")) if audios else None
+        def _pick_best_cdn_url(item: Dict[str, Any]) -> Optional[str]:
+            candidates: List[str] = []
+            for k in ("baseUrl", "base_url"):
+                u = item.get(k)
+                if isinstance(u, str) and u.startswith("http"):
+                    candidates.append(u)
+            for k in ("backupUrl", "backup_url"):
+                b_list = item.get(k)
+                if isinstance(b_list, list):
+                    for u in b_list:
+                        if isinstance(u, str) and u.startswith("http") and u not in candidates:
+                            candidates.append(u)
+            if not candidates:
+                return None
+
+            def _cdn_score(u: str) -> int:
+                ul = u.lower()
+                if "mcdn.bilivideo" in ul or "szbdyd.com" in ul or "xycdn" in ul or "pcdn" in ul:
+                    return 0
+                if "akamaized" in ul or "mirrorali" in ul or "mirrorcos" in ul or "mirrorhw" in ul or "upos-" in ul:
+                    return 2
+                return 1
+
+            candidates.sort(key=_cdn_score, reverse=True)
+            return candidates[0]
+
+        v_url = _pick_best_cdn_url(videos[0]) if videos else None
+        a_url = _pick_best_cdn_url(audios[0]) if audios else None
         if v_url:
             return {
                 "type": "dash",
@@ -298,6 +324,8 @@ def download_bilibili_slice_via_ffmpeg(
             if len(segments_to_fetch) == 1
             else output_mp4.parent / f"{output_mp4.stem}_sub{idx:02d}.mp4"
         )
+        temp_seg_out = seg_out.with_name(seg_out.stem + ".part.mp4")
+        temp_seg_out.unlink(missing_ok=True)
 
         cmd = [
             ffmpeg_path,
@@ -317,6 +345,10 @@ def download_bilibili_slice_via_ffmpeg(
             "1",
             "-reconnect_delay_max",
             "5",
+            "-multiple_requests",
+            "1",
+            "-rw_timeout",
+            "15000000",
         ]
 
         cmd.extend(["-headers", headers_str, *reconnect_opts])
@@ -340,7 +372,7 @@ def download_bilibili_slice_via_ffmpeg(
                 "copy",
                 "-movflags",
                 "+faststart",
-                str(seg_out),
+                str(temp_seg_out),
             ]
         )
 
@@ -388,9 +420,12 @@ def download_bilibili_slice_via_ffmpeg(
         if proc_callback:
             proc_callback(None)
         if stop_checker and stop_checker():
+            temp_seg_out.unlink(missing_ok=True)
             return output_mp4
-        if rc != 0 or not seg_out.is_file():
+        if rc != 0 or not temp_seg_out.is_file():
+            temp_seg_out.unlink(missing_ok=True)
             raise RuntimeError(f"Tải phân đoạn Bilibili thất bại (cid={seg['cid']}, mã lỗi={rc})")
+        temp_seg_out.replace(seg_out)
         part_files.append(seg_out)
 
     if len(part_files) > 1:

@@ -39,6 +39,25 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "flip_horizontal": False,
         "pitch_shift": 1.0,
     },
+    "bili_logo": {
+        "enabled": True,
+        "mode": "delogo",
+        "position": "top_right",
+        "x_pct": 83.5,
+        "y_pct": 3.0,
+        "w_pct": 14.5,
+        "h_pct": 7.5,
+    },
+    "watermark": {
+        "enabled": True,
+        "text": "AnNamTV",
+        "position": "top_right",
+        "font_size": 36,
+        "font_color": "yellow",
+        "opacity": 0.85,
+        "box": True,
+        "shadow": True,
+    },
     "audio_normalize": True,
     "clean_temp_after_done": True,
     "cookies_from_browser": "",
@@ -73,6 +92,14 @@ def load_config(config_path: Path) -> Dict[str, Any]:
                 ac = dict(DEFAULT_SETTINGS["anti_copyright"])
                 ac.update(v)
                 merged_settings["anti_copyright"] = ac
+            elif k == "bili_logo" and isinstance(v, dict):
+                bl = dict(DEFAULT_SETTINGS.get("bili_logo", {}))
+                bl.update(v)
+                merged_settings["bili_logo"] = bl
+            elif k == "watermark" and isinstance(v, dict):
+                wm = dict(DEFAULT_SETTINGS.get("watermark", {}))
+                wm.update(v)
+                merged_settings["watermark"] = wm
             else:
                 merged_settings[k] = v
 

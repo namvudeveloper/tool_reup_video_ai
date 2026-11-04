@@ -22,6 +22,31 @@
       "flip_horizontal": false,
       "pitch_shift": 1.0
     },
+    "bili_logo": {
+      "enabled": true,
+      "mode": "delogo",
+      "position": "top_right",
+      "x_pct": 83.5,
+      "y_pct": 3.0,
+      "w_pct": 14.5,
+      "h_pct": 7.5
+    },
+    "watermark": {
+      "enabled": true,
+      "text": "AnNamTV",
+      "position": "top_right",
+      "font_size": 36,
+      "font_color": "yellow",
+      "opacity": 0.85,
+      "box": true,
+      "shadow": true
+    },
+    "blur_sub": {
+      "mode": "delogo",
+      "y_pct": 86.0,
+      "h_pct": 10.0,
+      "w_pct": 82.0
+    },
     "audio_normalize": true,
     "clean_temp_after_done": true,
     "cookies_from_browser": "",

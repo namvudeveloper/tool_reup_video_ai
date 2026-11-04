@@ -145,21 +145,40 @@ class PipelineState:
                 "brightness": 0.02,
                 "contrast": 1.05,
                 "saturation": 1.07,
-                "speed_factor": 1.04,
+                "speed_factor": 1.0,
                 "flip_horizontal": False,
                 "pitch_shift": 1.0,
             },
-            "audio_normalize": True,
+            "audio_normalize": False,
             "clean_temp_after_done": True,
             "cookies_from_browser": "",
-            "whisper_model": "small",
-            "workflow_mode": "full",
+            "whisper_model": "base",
+            "workflow_mode": "srt",
             "tts_voice": "vi-VN-NamMinhNeural",
             "blur_sub": {
                 "mode": "delogo",
                 "y_pct": 86.0,
                 "h_pct": 10.0,
                 "w_pct": 82.0,
+            },
+            "bili_logo": {
+                "enabled": True,
+                "mode": "delogo",
+                "position": "top_right",
+                "x_pct": 83.5,
+                "y_pct": 3.0,
+                "w_pct": 14.5,
+                "h_pct": 7.5,
+            },
+            "watermark": {
+                "enabled": True,
+                "text": "AnNamTV",
+                "position": "top_right",
+                "font_size": 36,
+                "font_color": "yellow",
+                "opacity": 0.85,
+                "box": True,
+                "shadow": True,
             },
         }
 
@@ -744,7 +763,7 @@ def _run_pipeline_worker(run_config: Optional[Dict[str, Any]] = None) -> None:
 
                     dl_list = download_all_videos(
                         links=[source_str],
-                        raw_dir=RAW_DIR / hashlib.sha256(json.dumps([source_str, slice_start, slice_dur]).encode()).hexdigest()[:12] / f"c{c_idx:03d}",
+                        raw_dir=RAW_DIR / hashlib.sha256(json.dumps([re.sub(r"\?.*$", "", source_str), slice_start, slice_dur]).encode()).hexdigest()[:12] / f"c{c_idx:03d}",
                         project_root=PROJECT_ROOT,
                         ffmpeg_path=STATE.ffmpeg_path,
                         settings=settings,
@@ -755,6 +774,8 @@ def _run_pipeline_worker(run_config: Optional[Dict[str, Any]] = None) -> None:
                     )
                     in_file = dl_list[0]
                     used_remote_slice = True
+                    if STATE.stop_requested:
+                        break
 
                 # Give each run its own intermediates; older settings or sources
                 # must never cause an unrelated normalized clip to be reused.
@@ -777,6 +798,24 @@ def _run_pipeline_worker(run_config: Optional[Dict[str, Any]] = None) -> None:
                 )
 
                 duration, has_audio = probe_media_info(STATE.ffprobe_path, in_file)
+                if used_remote_slice and duration <= 0.5 and in_file.is_file():
+                    STATE.add_log(f"⚠️ File tải tạm ({in_file.name}) bị ngắt giữa chừng ở lần trước ➔ Xóa và tải lại...")
+                    in_file.unlink(missing_ok=True)
+                    dl_list = download_all_videos(
+                        links=[source_str],
+                        raw_dir=RAW_DIR / hashlib.sha256(json.dumps([re.sub(r"\?.*$", "", source_str), slice_start, slice_dur]).encode()).hexdigest()[:12] / f"c{c_idx:03d}",
+                        project_root=PROJECT_ROOT,
+                        ffmpeg_path=STATE.ffmpeg_path,
+                        settings=settings,
+                        slice_range=(slice_start, slice_dur) if slice_dur > 0 else None,
+                        progress_callback=_dl_progress,
+                        stop_checker=lambda: STATE.stop_requested,
+                        proc_callback=lambda p: setattr(STATE, "current_proc", p),
+                    )
+                    if STATE.stop_requested:
+                        break
+                    in_file = dl_list[0]
+                    duration, has_audio = probe_media_info(STATE.ffprobe_path, in_file)
                 if not used_remote_slice and slice_dur > 0:
                     actual_start = slice_start
                     keep_duration = slice_dur
@@ -787,8 +826,44 @@ def _run_pipeline_worker(run_config: Optional[Dict[str, Any]] = None) -> None:
                         actual_start = trim_start
                         keep_duration = duration - trim_start - trim_end
 
-                expected_out_dur = max(1.0, keep_duration / speed if speed > 0 else keep_duration)
+                # BƯỚC 1 SIÊU TỐC: Khi ở chế độ B1 (Tách SRT / A->Z), dùng Stream Copy (-c copy) để cắt phần 15 phút trong 1-2 giây!
+                # Toàn bộ hiệu ứng Che Logo + Che Sub Trung + In Sub Việt + Hardcore Bản Quyền sẽ được render 1 lần duy nhất bằng GPU ở Bước 2!
+                b1_stream_copy = (mode in ("srt", "full")) and bool(settings.get("b1_fast_stream_copy", True))
+                expected_out_dur = max(1.0, keep_duration if b1_stream_copy else (keep_duration / speed if speed > 0 else keep_duration))
                 vf_chain, af_chain = _build_filters(settings, has_audio)
+
+                def _build_stream_copy_cmd() -> List[str]:
+                    cmd = [
+                        STATE.ffmpeg_path,
+                        "-y",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-progress",
+                        "pipe:1",
+                        "-nostats",
+                    ]
+                    if actual_start > 0:
+                        cmd.extend(["-ss", f"{actual_start:.3f}"])
+                    cmd.extend(["-i", str(in_file)])
+                    if keep_duration > 0 and (actual_start > 0 or trim_end > 0 or slice_dur > 0):
+                        cmd.extend(["-t", f"{keep_duration:.3f}"])
+                    cmd.extend(
+                        [
+                            "-map",
+                            "0:v:0",
+                            "-map",
+                            "0:a?",
+                            "-c",
+                            "copy",
+                            "-avoid_negative_ts",
+                            "make_zero",
+                            "-movflags",
+                            "+faststart",
+                            str(norm_file),
+                        ]
+                    )
+                    return cmd
 
                 def _build_cmd(active_enc: str) -> List[str]:
                     cmd = [
@@ -848,14 +923,23 @@ def _run_pipeline_worker(run_config: Optional[Dict[str, Any]] = None) -> None:
                 def encoding_progress(percent: float) -> None:
                     video_progress((local_ep_idx - 1 + .4 + percent / 100 * .6) / len(chunk_items) * 95)
 
-                rc = _run_gui_ffmpeg(_build_cmd(encoder), expected_out_dur, global_ep_counter, total_eps,
-                                     progress_callback=encoding_progress)
-                if rc != 0 and not STATE.stop_requested and encoder != "libx264":
-                    STATE.add_log("⚠️ Chuyển sang chế độ CPU (libx264) cho đoạn này...")
-                    rc = _run_gui_ffmpeg(
-                        _build_cmd("libx264"), expected_out_dur, global_ep_counter, total_eps,
-                        progress_callback=encoding_progress,
-                    )
+                if b1_stream_copy:
+                    STATE.add_log(f"⚡ [B1 Stream Copy Siêu Tốc] Cắt trực tiếp đoạn {global_ep_counter}/{total_eps} không cần encode lại (1-2 giây)...")
+                    rc = _run_gui_ffmpeg(_build_stream_copy_cmd(), expected_out_dur, global_ep_counter, total_eps,
+                                         progress_callback=encoding_progress)
+                    if rc != 0 and not STATE.stop_requested:
+                        STATE.add_log("🎮 Chuyển sang GPU NVIDIA (h264_mf) cho đoạn này...")
+                        rc = _run_gui_ffmpeg(_build_cmd(encoder), expected_out_dur, global_ep_counter, total_eps,
+                                             progress_callback=encoding_progress)
+                else:
+                    rc = _run_gui_ffmpeg(_build_cmd(encoder), expected_out_dur, global_ep_counter, total_eps,
+                                         progress_callback=encoding_progress)
+                    if rc != 0 and not STATE.stop_requested and encoder != "libx264":
+                        STATE.add_log("⚠️ Chuyển sang chế độ CPU (libx264) cho đoạn này...")
+                        rc = _run_gui_ffmpeg(
+                            _build_cmd("libx264"), expected_out_dur, global_ep_counter, total_eps,
+                            progress_callback=encoding_progress,
+                        )
 
                 if STATE.stop_requested:
                     if norm_file.exists():
@@ -1232,7 +1316,7 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
-        asset_request = path in {"/api/srt/auto-transcribe", "/api/srt/generate-tts",
+        asset_request = path in {"/api/srt/auto-transcribe", "/api/srt/generate-tts", "/api/srt/tts-test",
                                  "/api/srt/export-capcut-video", "/api/blur-video-now"}
         if asset_request:
             with STATE.lock:
@@ -1385,6 +1469,10 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                             STATE.settings["anti_copyright"].update(v)
                         elif k == "blur_sub" and isinstance(v, dict):
                             STATE.settings.setdefault("blur_sub", {}).update(v)
+                        elif k == "bili_logo" and isinstance(v, dict):
+                            STATE.settings.setdefault("bili_logo", {}).update(v)
+                        elif k == "watermark" and isinstance(v, dict):
+                            STATE.settings.setdefault("watermark", {}).update(v)
                         else:
                             STATE.settings[k] = v
             return self._send_current_plan(reset_selection=reset_sel)
@@ -1400,7 +1488,7 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 mode_str = "delogo"
                 blur_cfg = dict(blur_cfg, mode="delogo")
 
-            from core.processor import _parse_resolution, build_blur_sub_filter
+            from core.processor import _parse_resolution, build_blur_sub_filter, build_bili_logo_filter, build_watermark_filter
 
             in_p = Path(target_vid).resolve()
             out_p = OUTPUT_DIR / f"{in_p.stem}_Mo_Sub_Trung.mp4"
@@ -1433,10 +1521,23 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-            flt = build_blur_sub_filter(vid_w, vid_h, blur_cfg)
-            if not flt:
-                self._send_json({"ok": False, "message": "Hãy chọn chế độ làm mờ chữ Trung Quốc trước!"})
+            bili_cfg = body.get("bili_logo") or STATE.settings.get("bili_logo") or {}
+            wm_cfg = body.get("watermark") or STATE.settings.get("watermark") or {}
+            flt_parts = []
+            flt_sub = build_blur_sub_filter(vid_w, vid_h, blur_cfg)
+            if flt_sub:
+                flt_parts.append(flt_sub)
+            flt_bili = build_bili_logo_filter(vid_w, vid_h, bili_cfg)
+            if flt_bili:
+                flt_parts.append(flt_bili)
+            flt_wm = build_watermark_filter(vid_w, vid_h, wm_cfg)
+            if flt_wm:
+                flt_parts.append(flt_wm)
+
+            if not flt_parts:
+                self._send_json({"ok": False, "message": "Hãy bật ít nhất một tùy chọn: Làm mờ sub, Che logo Bilibili hoặc Watermark AnNamTV!"})
                 return
+            flt = ",".join(flt_parts)
 
             STATE.add_log(f"🌫️ Đang làm mờ chữ Trung Quốc trên video: {in_p.name} ➔ {out_p.name}...")
             cmd_blur = [
@@ -1758,6 +1859,8 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
 
             blur_cfg = body.get("blur_sub") if isinstance(body.get("blur_sub"), dict) else STATE.settings.get("blur_sub", {})
             burn_cfg = body.get("burn_sub") if isinstance(body.get("burn_sub"), dict) else {"enabled": True, "color": "yellow", "font_size": 52, "box": True}
+            bili_cfg = body.get("bili_logo") if isinstance(body.get("bili_logo"), dict) else STATE.settings.get("bili_logo", {})
+            wm_cfg = body.get("watermark") if isinstance(body.get("watermark"), dict) else STATE.settings.get("watermark", {})
             orig_vol = float(body.get("original_vol", 0.12) if body.get("original_vol") is not None else 0.12)
             tts_vol = float(body.get("tts_vol", 1.0) if body.get("tts_vol") is not None else 1.0)
 
@@ -1785,6 +1888,9 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                         voice=voice,
                         total_video_duration=video_duration,
                         progress_callback=_on_tts_prog_auto,
+                        speed=float(body.get("tts_speed", STATE.settings.get("tts_speed", 1.3)) or 1.3),
+                        pitch_hz=int(body.get("tts_pitch", STATE.settings.get("tts_pitch", 0)) or 0),
+                        uniform_speed=bool(body.get("tts_uniform", STATE.settings.get("tts_uniform", True))),
                     )
                     req_audio = str(auto_mp3.resolve())
 
@@ -1798,6 +1904,19 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     STATE.srt_status_msg = f"🎬 Đang kết xuất video CapCut (Làm mờ chữ Trung + In Sub Việt + Ghép MP3): {out_mp4.name}..."
                 STATE.add_log(f"🎬 Đang kết xuất video chuẩn CapCut ➔ {out_mp4.name} (MP3: {Path(req_audio).name if req_audio else 'Không dùng'})...")
 
+                fast_mux = bool(body.get("fast_mux", False))
+                use_gpu = bool(body.get("use_gpu", True))
+                ac_cfg = body.get("anti_copyright") if isinstance(body.get("anti_copyright"), dict) else STATE.settings.get("anti_copyright", {})
+                if fast_mux:
+                    blur_cfg = {"mode": "off"}
+                    burn_cfg = {"enabled": False}
+                    bili_cfg = {"mode": "off"}
+                    wm_cfg = {"enabled": False}
+                    ac_cfg = {"enabled": False}
+                    STATE.add_log("⚡ Chế độ XUẤT SIÊU TỐC (Stream Copy): Giữ nguyên video gốc, chỉ ghép Audio Thuyết minh + Sub mềm rời. Không render lại hình ảnh (Chỉ 10-20 giây xong)!")
+                else:
+                    STATE.add_log("🎮 [BƯỚC 2 - FULL GPU NVIDIA] Kết xuất 1 lần duy nhất: Che Logo Bilibili + Che Sub Trung + In Cứng Sub Việt + Hardcore Bản Quyền + Thuyết Minh MP3!")
+
                 mux_dubbed_video(
                     input_video=str(target_vid),
                     input_audio_vi=req_audio if (req_audio and Path(req_audio).is_file()) else None,
@@ -1807,6 +1926,10 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     tts_audio_volume=tts_vol,
                     blur_sub_cfg=blur_cfg,
                     burn_sub_cfg=burn_cfg,
+                    bili_logo_cfg=bili_cfg,
+                    watermark_cfg=wm_cfg,
+                    anti_copyright_cfg=ac_cfg,
+                    use_gpu=use_gpu,
                 )
 
                 size_mb = out_mp4.stat().st_size / (1024 * 1024)
@@ -1844,6 +1967,51 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 with STATE.lock:
                     STATE.srt_status_msg = f"❌ Lỗi xuất video CapCut: {exc}"
                 self._send_json({"ok": False, "message": str(exc)})
+            return
+
+        if path == "/api/srt/tts-test":
+            rows = body.get("srt_rows", STATE.srt_rows)
+            voice = str(body.get("voice", "vi-VN-NamMinhNeural"))
+            tts_speed = float(body.get("tts_speed", 1.3) or 1.3)
+            tts_pitch = int(body.get("tts_pitch", 0) or 0)
+            tts_uniform = bool(body.get("tts_uniform", True))
+            start_sec = float(body.get("start_sec", 0.0) or 0.0)
+            duration_sec = min(30.0, max(5.0, float(body.get("duration_sec", 10.0) or 10.0)))
+            try:
+                import importlib
+                import audio_sub_pipeline
+
+                importlib.reload(audio_sub_pipeline)
+                from audio_sub_pipeline import generate_tts_voice_test
+
+                with STATE.lock:
+                    STATE.settings["tts_speed"] = tts_speed
+                    STATE.settings["tts_pitch"] = tts_pitch
+                    STATE.settings["tts_uniform"] = tts_uniform
+                    STATE.srt_status_msg = f"🎧 Đang tạo MP3 thử giọng {duration_sec:.0f}s (tốc độ {tts_speed:.2f}x)..."
+                test_mp3 = OUTPUT_DIR / "_test_giong_doc.mp3"
+                info = generate_tts_voice_test(
+                    rows,
+                    str(test_mp3),
+                    voice=voice,
+                    speed=tts_speed,
+                    pitch_hz=tts_pitch,
+                    start_sec=start_sec,
+                    duration_sec=duration_sec,
+                    uniform_speed=tts_uniform,
+                )
+                msg = (
+                    f"🎧 Đã tạo MP3 thử giọng {duration_sec:.0f}s ({info['lines']} câu, tốc độ {tts_speed:.2f}x, "
+                    f"từ giây {info['start_sec']:.1f} của video)."
+                )
+                with STATE.lock:
+                    STATE.srt_status_msg = msg
+                self._send_json({"ok": True, "test_mp3": info["path"], "start_sec": info["start_sec"],
+                                 "duration_sec": duration_sec, "message": msg})
+            except Exception as exc_test:
+                with STATE.lock:
+                    STATE.srt_status_msg = f"❌ Lỗi tạo MP3 thử giọng: {exc_test}"
+                self._send_json({"ok": False, "message": str(exc_test)})
             return
 
         if path == "/api/srt/generate-tts":
@@ -1886,13 +2054,24 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     with STATE.lock:
                         STATE.srt_status_msg = f"🗣️ Đang tạo file .MP3 thuyết minh: {done_c}/{total_c} câu ({pct}%) — {snippet}"
 
-                if not out_mp3.is_file() or out_mp3.stat().st_mtime < srt_file.stat().st_mtime:
+                tts_speed = float(body.get("tts_speed", STATE.settings.get("tts_speed", 1.3)) or 1.3)
+                tts_pitch = int(body.get("tts_pitch", STATE.settings.get("tts_pitch", 0)) or 0)
+                tts_uniform = bool(body.get("tts_uniform", STATE.settings.get("tts_uniform", True)))
+                with STATE.lock:
+                    STATE.settings["tts_speed"] = tts_speed
+                    STATE.settings["tts_pitch"] = tts_pitch
+                    STATE.settings["tts_uniform"] = tts_uniform
+                STATE.add_log(f"⚙️ Tốc độ đọc cố định {tts_speed:.2f}x | Cao độ {tts_pitch:+d}Hz | Đồng đều: {tts_uniform}")
+                if True:
                     generate_tts_from_srt(
                         str(srt_file),
                         str(out_mp3),
                         voice=voice,
                         total_video_duration=video_duration,
                         progress_callback=_on_tts_prog,
+                        speed=tts_speed,
+                        pitch_hz=tts_pitch,
+                        uniform_speed=tts_uniform,
                     )
 
                 dubbed_mp4 = None

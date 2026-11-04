@@ -680,8 +680,8 @@
     <div class="brand">
       <div class="brand-icon">🎬</div>
       <div>
-        <h1>TOOL CẮT GHÉP VIDEO (15 PHÚT / 5 TIẾNG) & SỬA PHỤ ĐỀ .SRT</h1>
-        <p>Chọn cắt 10 phần đầu 15 phút • Lách Bản Quyền Hardcore • Sửa Sub dịch sai & Lồng Tiếng Việt</p>
+        <h1>TOOL REUP VIDEO AI SIÊU TỐC 2 BƯỚC — FULL TĂNG TỐC CARD ĐỒ HỌA NVIDIA GPU</h1>
+        <p>⚡ BƯỚC 1: Dán Bili / Chọn Video ➔ Xuất .SRT Tiếng Việt Siêu Tốc (CUDA GPU) • 🎬 BƯỚC 2: Sửa SRT + Thuyết Minh ➔ Kết Xuất Full GPU (Che Logo + Che Sub + Sub Việt + Hardcore Bản Quyền)</p>
       </div>
     </div>
 
@@ -847,7 +847,7 @@
         <div class="step-header">
           <div class="step-title">
             <span class="step-num">3</span>
-            <span>Cài Đặt Lách Bản Quyền & Bấm Xuất Phần Đã Chọn</span>
+            <span>BƯỚC 1 (B1): Cắt Phần Siêu Tốc & Tự Động Xuất File .SRT Tiếng Việt (Bằng GPU) + Cấu Hình Lách Bản Quyền</span>
           </div>
         </div>
 
@@ -926,7 +926,7 @@
         <div class="form-group">
           <label>🔥 Cấp Độ Chống Quét Bản Quyền YouTube (Content ID Bypass):</label>
           <select id="antiCopyrightLevel" class="form-input" style="border-color: #ef4444; background: #1a1225;" onchange="onAntiCopyrightLevelChange()">
-            <option value="hardcore" selected>🔴 Cấp 3: HARDCORE YOUTUBE BYPASS (Cắt lệch tâm + Xoay vi mô + Hạt Film + Phá sóng Audio EQ + Tốc độ 1.04x)</option>
+            <option value="hardcore" selected>🔴 Cấp 3: HARDCORE GPU SIÊU TỐC (Cắt lệch tâm + Đổi ma trận màu RGB/Gamma + Phá sóng Audio EQ + GOP 47 — Đã bỏ các bộ lọc CPU chậm)</option>
             <option value="medium">🟡 Cấp 2: Nâng Cao (Cắt lệch tâm 3.5% + Đổi màu RGB + Lọc EQ âm thanh + Tốc độ 1.03x)</option>
             <option value="basic">🟢 Cấp 1: Cơ Bản (Zoom viền 2% + Chỉnh màu tươi + Giữ nguyên tốc độ 1.0x)</option>
             <option value="off">⚪ Tắt Lách Bản Quyền (Chỉ cắt & chuẩn hóa 1080p)</option>
@@ -941,7 +941,7 @@
           <div class="form-row">
             <div class="form-group" style="margin-bottom: 8px;">
               <label>⏩ Tốc độ Video & Tiếng (Speed):</label>
-              <input type="number" id="acSpeedInput" class="form-input" step="0.01" min="0.80" max="1.50" value="1.04" onchange="saveSettingsToServer()" />
+              <input type="number" id="acSpeedInput" class="form-input" step="0.01" min="0.80" max="1.50" value="1.00" onchange="saveSettingsToServer()" />
             </div>
             <div class="form-group" style="margin-bottom: 8px;">
               <label>🎵 Đổi tông giọng (Pitch, 1.0 = Gốc):</label>
@@ -960,10 +960,125 @@
           </div>
         </div>
 
+        <!-- Bảng Che / Xóa Logo Bilibili (Delogo / Blur Bilibili) -->
+        <div style="background: rgba(88, 28, 135, 0.45); border: 1px solid #a855f7; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-size: 13px; font-weight: 800; color: #d8b4fe;">
+              📺 Che / Xóa Logo Bilibili (Kéo chỉnh trực tiếp trên màn hình Xem Trước):
+            </div>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: #f3e8ff;">
+              <input type="checkbox" id="biliLogoEnabledCheck" checked onchange="updateBiliLogoPreview(); saveSettingsToServer();" style="width: 16px; height: 16px; accent-color: #a855f7;" />
+              Bật che logo
+            </label>
+          </div>
+          <div class="form-row" style="grid-template-columns: 1.2fr 1fr; margin-bottom: 8px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Kiểu xóa logo:</label>
+              <select id="biliLogoModeSelect" class="form-input" onchange="updateBiliLogoPreview(); saveSettingsToServer();">
+                <option value="delogo" selected>✨ Xóa mờ hòa trộn nền tự nhiên (Delogo - Nhanh & Đẹp)</option>
+                <option value="blur">🌫️ Làm mờ kính nhòe (Box Blur)</option>
+                <option value="blackbar">⬛ Hộp tối Cinema che kín</option>
+                <option value="off">⚪ Tắt</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Vị trí định sẵn:</label>
+              <select id="biliLogoPositionSelect" class="form-input" onchange="onBiliLogoPresetChange(); saveSettingsToServer();">
+                <option value="top_right" selected>↗️ Góc trên phải (Chuẩn Bilibili)</option>
+                <option value="top_left">↖️ Góc trên trái</option>
+                <option value="bottom_right">↘️ Góc dưới phải</option>
+                <option value="bottom_left">↙️ Góc dưới trái</option>
+                <option value="custom">🛠️ Tự do kéo chỉnh trên video</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 8px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>↔️ Tọa độ X (%):</label>
+              <input type="number" id="biliLogoXInput" class="form-input" step="0.5" min="0" max="95" value="83.5" oninput="updateBiliLogoPreview()" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>↕️ Tọa độ Y (%):</label>
+              <input type="number" id="biliLogoYInput" class="form-input" step="0.5" min="0" max="95" value="3.0" oninput="updateBiliLogoPreview()" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>↔️ Chiều rộng (%):</label>
+              <input type="number" id="biliLogoWInput" class="form-input" step="0.5" min="4" max="45" value="14.5" oninput="updateBiliLogoPreview()" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>↕️ Chiều cao (%):</label>
+              <input type="number" id="biliLogoHInput" class="form-input" step="0.5" min="3" max="30" value="7.5" oninput="updateBiliLogoPreview()" onchange="saveSettingsToServer()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Bảng Watermark Chống Bản Quyền Kênh (AnNamTV) -->
+        <div style="background: rgba(180, 83, 9, 0.35); border: 1px solid #f59e0b; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-size: 13px; font-weight: 800; color: #fde68a;">
+              🛡️ Watermark Chống Bản Quyền Kênh (Đóng Dấu Bản Quyền AnNamTV):
+            </div>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: #fef3c7;">
+              <input type="checkbox" id="watermarkEnabledCheck" checked onchange="updateWatermarkPreview(); saveSettingsToServer();" style="width: 16px; height: 16px; accent-color: #f59e0b;" />
+              Bật Watermark
+            </label>
+          </div>
+          <div class="form-row" style="grid-template-columns: 1.5fr 1fr; margin-bottom: 8px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Chữ Watermark chống bản quyền:</label>
+              <input type="text" id="watermarkTextInput" class="form-input" value="AnNamTV" placeholder="Ví dụ: AnNamTV" oninput="updateWatermarkPreview()" onchange="saveSettingsToServer()" style="font-weight: 800; color: #fef08a;" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Vị trí hiển thị:</label>
+              <select id="watermarkPositionSelect" class="form-input" onchange="updateWatermarkPreview(); saveSettingsToServer();">
+                <option value="top_right" selected>↗️ Góc trên phải (Đè che góc logo Bilibili)</option>
+                <option value="top_left">↖️ Góc trên trái</option>
+                <option value="bottom_right">↘️ Góc dưới phải</option>
+                <option value="bottom_left">↙️ Góc dưới trái</option>
+                <option value="center">🎯 Chính giữa (Chống reup tuyệt đối)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 8px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Màu chữ:</label>
+              <select id="watermarkColorSelect" class="form-input" onchange="updateWatermarkPreview(); saveSettingsToServer();">
+                <option value="yellow" selected>🟡 Vàng Gold (Sang trọng, nổi bật)</option>
+                <option value="white">⚪ Trắng tinh tế</option>
+                <option value="orange">🟠 Đỏ cam rực rỡ</option>
+                <option value="cyan">🔵 Xanh Cyan hiện đại</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Cỡ chữ (px):</label>
+              <input type="number" id="watermarkSizeInput" class="form-input" min="18" max="72" step="2" value="36" oninput="updateWatermarkPreview()" onchange="saveSettingsToServer()" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Độ mờ Alpha (%):</label>
+              <input type="number" id="watermarkOpacityInput" class="form-input" min="20" max="100" step="5" value="85" oninput="updateWatermarkPreview()" onchange="saveSettingsToServer()" />
+            </div>
+          </div>
+          <div style="display: flex; gap: 16px; align-items: center; font-size: 12px; color: #fef3c7;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="watermarkBoxCheck" checked onchange="updateWatermarkPreview(); saveSettingsToServer();" style="accent-color: #f59e0b;" />
+              Hộp nền mờ (Badge Box) bảo vệ chữ
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="watermarkShadowCheck" checked onchange="updateWatermarkPreview(); saveSettingsToServer();" style="accent-color: #f59e0b;" />
+              Đổ bóng nổi khối 3D (Shadow)
+            </label>
+          </div>
+        </div>
+
         <!-- Bảng Làm Mờ / Che Chữ Trung Quốc Trong Video (Hardsub Blur / Delogo) -->
         <div style="background: rgba(30, 27, 75, 0.55); border: 1px solid #6366f1; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
-          <div style="font-size: 13px; font-weight: 800; color: #a5b4fc; margin-bottom: 8px;">
-            🌫️ Làm Mờ / Xóa Chữ Phụ Đề Trung Quốc Trong Video (Có khung canh trực tiếp trên màn hình Xem Trước):
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+            <div style="font-size: 13px; font-weight: 800; color: #a5b4fc;">
+              🌫️ Làm Mờ / Xóa Chữ Phụ Đề Trung Quốc Trong Video (Có khung canh trực tiếp):
+            </div>
+            <span style="font-size: 11.5px; color: #6ee7b7; font-weight: 700; background: rgba(16, 185, 129, 0.15); padding: 3px 8px; border-radius: 6px;">
+              💡 Mẹo: Chọn "⚪ Tắt" nếu bạn tự che chữ trong CapCut để xuất siêu tốc 10 giây!
+            </span>
           </div>
           <div class="form-group" style="margin-bottom: 8px;">
             <label>Kiểu làm mờ chữ Trung Quốc:</label>
@@ -1026,18 +1141,18 @@
           <div class="form-group">
             <label for="workflowModeSelect">Kết quả cần tạo cho mỗi phần:</label>
             <select id="workflowModeSelect" class="form-input" onchange="updateWorkflowLabel(); saveSettingsToServer()">
-              <option value="full">A → Z: Video → SRT tiếng Việt → MP3 thuyết minh</option>
-              <option value="srt">Video → SRT tiếng Việt</option>
-              <option value="video">Chỉ cắt và xuất video</option>
+              <option value="srt" selected>⚡ BƯỚC 1 (Khuyên dùng): Cắt Video Siêu Tốc (Stream Copy) + Tự Xuất File .SRT Tiếng Việt (GPU CUDA)</option>
+              <option value="full">🔄 Chạy Tự Động A → Z: Cắt Video + Xuất .SRT Tiếng Việt + Tạo Luôn .MP3 Thuyết Minh</option>
+              <option value="video">✂️ Chỉ Cắt & Xuất Video (Bằng GPU NVIDIA)</option>
             </select>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="workflowModelSelect">Mô hình nhận diện:</label>
               <select id="workflowModelSelect" class="form-input" onchange="syncWorkflowSetting('model', this.value)">
-                <option value="base">Base · Nhanh nhất</option>
-                <option value="small" selected>Small · Cân bằng</option>
-                <option value="medium">Medium · Chính xác hơn, chạy lâu</option>
+                <option value="base" selected>⚡ Base · Siêu tốc GPU CUDA (8 tiếng ~ 15 phút)</option>
+                <option value="small">Small · Cân bằng</option>
+                <option value="medium">Medium · Chính xác hơn</option>
               </select>
             </div>
             <div class="form-group">
@@ -1121,7 +1236,7 @@
       <div class="step-header">
         <div class="step-title">
           <span class="step-num" style="background: var(--purple);">4</span>
-          <span>Trình Sửa Phụ Đề (.SRT) Thủ Công & Tạo Thuyết Minh Tiếng Việt (TTS)</span>
+          <span>BƯỚC 2 (B2): Xem Trước Video, Sửa Tay Phụ Đề (.SRT), Tạo Thuyết Minh (.MP3) & Kết Xuất Full Bằng Card Đồ Họa GPU</span>
         </div>
         <span style="font-size: 13px; color: #a7f3d0; font-weight: 700;" id="srtStatusLabel">
           💡 Chỗ nào máy dịch sai tên nhân vật / thuật ngữ, bạn bấm vào ô Tiếng Việt sửa lại rồi bấm Lưu hoặc Tạo Thuyết Minh!
@@ -1147,7 +1262,7 @@
             <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(1.25)">1.25x</button>
             <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(1.5)">1.5x</button>
             <button class="btn btn-outline" style="padding: 5px 10px; font-size: 12px;" onclick="setPreviewPlaybackRate(2.0)">2.0x</button>
-            <button class="btn btn-purple" id="blurNowBtn" style="padding: 6px 12px; font-size: 12px;" onclick="blurCurrentPreviewVideoNow()">🌫️ Làm Mờ Chữ Trung Cho Video Này Ngay</button>
+            <button class="btn btn-purple" id="blurNowBtn" style="padding: 6px 12px; font-size: 12px; background: linear-gradient(135deg, #7c3aed, #d97706); border: none;" onclick="blurCurrentPreviewVideoNow()">⚡ Che Logo Bili & Watermark & Mờ Sub Ngay</button>
             <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="openOutputFolder()">📂 Mở Thư Mục output/</button>
           </div>
         </div>
@@ -1163,6 +1278,37 @@
             onpause="onPreviewPauseSync()"
             onseeking="onPreviewSeekSync()"
           ></video>
+          <!-- Khung xem trước trực tiếp vùng che logo Bilibili (Bili Logo Overlay) -->
+          <div
+            id="biliLogoOverlay"
+            onmousedown="startBiliLogoDrag(event, 'move')"
+            title="✋ Giữ chuột trái để KÉO DI CHUYỂN khung che logo Bilibili"
+            style="position: absolute; left: 83.5%; width: 14.5%; top: 3%; height: 7.5%; border: 2px dashed rgba(168, 85, 247, 0.95); border-radius: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); background: rgba(88, 28, 135, 0.35); cursor: move; user-select: none; z-index: 16; display: flex; align-items: center; justify-content: center; color: #f3e8ff; font-size: 11px; font-weight: 800; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);"
+          >
+            <span style="pointer-events: none; text-shadow: 0 1px 3px #000; text-align: center; line-height: 1.2;">📺 Che Logo Bili</span>
+            <!-- Tay nắm kéo giãn góc trái dưới -->
+            <div
+              onmousedown="startBiliLogoDrag(event, 'resize-sw')"
+              title="Kéo góc này để chỉnh to/nhỏ khung che logo"
+              style="position: absolute; left: -5px; bottom: -5px; width: 14px; height: 14px; background: #a855f7; border: 2px solid #fff; border-radius: 3px; cursor: nesw-resize; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #fff;"
+            >↙</div>
+            <!-- Tay nắm kéo giãn góc phải dưới -->
+            <div
+              onmousedown="startBiliLogoDrag(event, 'resize-se')"
+              title="Kéo góc này để chỉnh to/nhỏ khung che logo"
+              style="position: absolute; right: -5px; bottom: -5px; width: 14px; height: 14px; background: #a855f7; border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #fff;"
+            >↘</div>
+          </div>
+
+          <!-- Nhãn xem trước Watermark Bản Quyền AnNamTV trực tiếp trên video -->
+          <div
+            id="watermarkLiveOverlay"
+            title="🛡️ Watermark Chống Bản Quyền Kênh: AnNamTV"
+            style="position: absolute; right: 24px; top: 18px; z-index: 18; pointer-events: none; user-select: none; font-family: Arial, sans-serif; font-weight: 900; letter-spacing: 0.5px; transition: all 0.15s ease;"
+          >
+            <span id="watermarkLiveText" style="display: inline-block; padding: 4px 10px; border-radius: 6px; background: rgba(0,0,0,0.45); color: #facc15; font-size: 20px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); border: 1.5px solid rgba(0,0,0,0.6);">AnNamTV</span>
+          </div>
+
           <!-- Khung xem trước trực tiếp vùng làm mờ chữ Trung Quốc (Blur Zone Overlay) -->
           <div
             id="blurZoneOverlay"
@@ -1212,9 +1358,9 @@
       <div class="form-group" style="max-width: 390px;">
         <label>🎙️ Mô hình nhận diện tiếng Trung:</label>
         <select id="whisperModelSelect" class="form-input" onchange="syncWorkflowSetting('model', this.value)">
-          <option value="base">Nhanh nhất · Base</option>
-          <option value="small" selected>Cân bằng · Small</option>
-          <option value="medium">Chính xác hơn · Medium (tải lâu)</option>
+          <option value="base" selected>⚡ Siêu tốc GPU CUDA · Base (Khuyên dùng cho video 8 tiếng)</option>
+          <option value="small">Cân bằng · Small</option>
+          <option value="medium">Chính xác hơn · Medium</option>
         </select>
       </div>
 
@@ -1312,6 +1458,38 @@
             </div>
           </div>
 
+          <!-- CẤU HÌNH TỐC ĐỘ GIỌNG ĐỌC (ĐỒNG ĐỀU MỌI CÂU) + MP3 THỬ 10 GIÂY -->
+          <div style="margin-top: 12px; background: rgba(15, 23, 42, 0.6); border: 1px dashed #10b981; border-radius: 10px; padding: 12px;">
+            <div style="font-weight: 800; font-size: 13px; color: #fde047; margin-bottom: 8px;">
+              ⚙️ Cấu Hình Giọng Đọc (Mọi câu đọc CÙNG 1 tốc độ) — Thử 10 giây trước khi render
+            </div>
+            <div style="display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 12px; align-items: end;">
+              <div>
+                <label style="font-size: 12px; color: #cbd5e1;">🚀 Tốc độ đọc: <b id="ttsSpeedLabel" style="color:#6ee7b7;">1.30x</b></label>
+                <input type="range" id="ttsSpeedInput" min="0.8" max="2.0" step="0.05" value="1.3" style="width: 100%;"
+                  oninput="document.getElementById('ttsSpeedLabel').textContent = parseFloat(this.value).toFixed(2) + 'x'" />
+              </div>
+              <div>
+                <label style="font-size: 12px; color: #cbd5e1;">🎚️ Cao độ giọng: <b id="ttsPitchLabel" style="color:#6ee7b7;">+0Hz</b></label>
+                <input type="range" id="ttsPitchInput" min="-30" max="30" step="2" value="0" style="width: 100%;"
+                  oninput="document.getElementById('ttsPitchLabel').textContent = (this.value >= 0 ? '+' : '') + this.value + 'Hz'" />
+              </div>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; cursor: pointer;">
+                <input type="checkbox" id="ttsUniformCheck" checked />
+                Tốc độ đồng đều (không tăng tốc riêng câu dài)
+              </label>
+            </div>
+            <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <button class="btn btn-warning" style="padding: 8px 14px; font-size: 13px; font-weight: 800;" id="ttsTestBtn" onclick="generateVoiceTestMp3()">
+                🎧 Tạo MP3 Thử 10 Giây (từ vị trí video đang dừng)
+              </button>
+              <button class="btn btn-outline" style="padding: 8px 12px; font-size: 12.5px;" onclick="playVoiceTestInVideo()">
+                ▶️ Xem Thử Trong Video (10s)
+              </button>
+              <span id="ttsTestInfo" style="font-size: 12px; color: var(--muted);">Tua video tới đoạn có thoại rồi bấm tạo thử.</span>
+            </div>
+          </div>
+
           <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <span style="font-size: 12px; color: var(--muted);">🎧 Nghe thử riêng file .MP3 thuyết minh:</span>
             <audio id="ttsAudioPreviewPlayer" controls preload="metadata" style="height: 34px; flex: 1; max-width: 520px;"></audio>
@@ -1377,14 +1555,53 @@
           </div>
         </div>
 
-        <!-- NÚT XUẤT VIDEO HOÀN CHỈNH KIỂU CAPCUT -->
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-          <div style="font-size: 12.5px; color: #cbd5e1;">
-            ⚡ <b>Đã có sẵn file .MP3 thuyết minh?</b> Bấm nút bên phải để ghép ngay <b>Video + Xóa mờ chữ Trung + Hardsub Việt + MP3</b> (không cần chờ đọc lại giọng AI)!
+        <!-- BẢNG ĐIỀU KHIỂN CHẾ ĐỘ XUẤT (TÁCH CỔ CHAI & TĂNG TỐC GPU) -->
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1.5px solid #38bdf8; border-radius: 14px; padding: 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+            <span style="font-weight: 800; font-size: 14px; color: #38bdf8;">
+              ⚡ Chọn Chế Độ Xuất Video & Tăng Tốc Phần Cứng:
+            </span>
+            <label style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #4ade80; font-weight: 800; cursor: pointer; background: rgba(34, 197, 94, 0.15); border: 1px solid #22c55e; border-radius: 8px; padding: 4px 10px;">
+              <input type="checkbox" id="enableGpuExportCheck" checked style="width: 16px; height: 16px; accent-color: #22c55e;" />
+              🎮 Kích hoạt GPU NVIDIA (GeForce GTX 1050 Ti - Nhanh gấp 10 lần)
+            </label>
           </div>
-          <button class="btn btn-success" style="padding: 14px 26px; font-size: 15.5px; font-weight: 900; box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);" id="capcutExportBtn" onclick="exportCapcutVideoNow()">
-            🎬 3B. XUẤT VIDEO ĐÃ CHỈNH KIỂU CAPCUT (RA FILE .MP4 NGAY)
-          </button>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <!-- CHẾ ĐỘ 1: XUẤT SIÊU TỐC (Stream Copy) -->
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1.5px solid #10b981; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <span style="font-weight: 900; font-size: 14px; color: #6ee7b7;">🚀 CHẾ ĐỘ 1: XUẤT SIÊU TỐC</span>
+                  <span style="background: #10b981; color: #022c22; font-size: 10.5px; font-weight: 900; padding: 2px 7px; border-radius: 6px;">10 GIÂY XONG</span>
+                </div>
+                <div style="font-size: 12px; color: #cbd5e1; line-height: 1.45;">
+                  ⚡ <b>Tách bỏ "Cổ chai"</b>: Tắt làm mờ & tắt in cứng chữ. Chỉ lồng tiếng Thuyết Minh MP3 vào video gốc và kèm file phụ đề Tiếng Việt.
+                  <br>💡 <b>Lợi ích:</b> Xuất cực nhanh trong 10–20 giây! Bạn có thể ném video vào CapCut tự che chữ và trang trí phụ đề mượt mà theo ý thích.
+                </div>
+              </div>
+              <button class="btn btn-success" style="width: 100%; margin-top: 12px; padding: 12px 16px; font-weight: 900; font-size: 14px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);" id="fastExportBtn" onclick="exportCapcutVideoNow(true)">
+                ⚡ 3B-1. XUẤT SIÊU TỐC (CHỈ GHÉP MP3 - 10 GIÂY)
+              </button>
+            </div>
+
+            <!-- CHẾ ĐỘ 2: BƯỚC 2 KẾT XUẤT HOÀN CHỈNH BẰNG GPU (ÁP DỤNG TẤT CẢ) -->
+            <div style="background: rgba(99, 102, 241, 0.15); border: 2px solid #818cf8; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <span style="font-weight: 900; font-size: 14px; color: #fde047;">🔥 BƯỚC 2: KẾT XUẤT VIDEO HOÀN CHỈNH (ÁP DỤNG TẤT CẢ)</span>
+                  <span style="background: #6366f1; color: #ffffff; font-size: 10.5px; font-weight: 900; padding: 2px 7px; border-radius: 6px;">GPU NVIDIA ~1.5 PHÚT</span>
+                </div>
+                <div style="font-size: 12px; color: #e2e8f0; line-height: 1.5;">
+                  ✅ <b>Gộp tất cả trong 1 lần render bằng Card đồ họa GTX 1050 Ti:</b>
+                  <br>1️⃣ Che Logo Bilibili + 2️⃣ Che Sub Trung Quốc + 3️⃣ In Cứng Sub Tiếng Việt + 4️⃣ Hardcore Lách Bản Quyền (Cắt lệch tâm, Đổi màu RGB, Phá sóng Audio EQ, GOP 47) + 5️⃣ Trộn Thuyết Minh MP3!
+                </div>
+              </div>
+              <button class="btn btn-primary" style="width: 100%; margin-top: 12px; padding: 14px 16px; font-weight: 900; font-size: 14.5px; background: linear-gradient(90deg, #4f46e5, #7c3aed); box-shadow: 0 4px 18px rgba(99, 102, 241, 0.5);" id="capcutExportBtn" onclick="exportCapcutVideoNow(false)">
+                🚀 KẾT XUẤT VIDEO HOÀN CHỈNH BẰNG GPU (FULL TẤT CẢ)
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1496,6 +1713,28 @@
           if (wInp) wInp.value = newW;
           if (hInp) hInp.value = newH;
         }
+        // Đổ cấu hình Che Logo Bilibili
+        const bl = data.settings?.bili_logo || {};
+        if (bl.enabled !== undefined) document.getElementById("biliLogoEnabledCheck").checked = !!bl.enabled;
+        if (bl.mode !== undefined) document.getElementById("biliLogoModeSelect").value = bl.mode;
+        if (bl.position !== undefined) document.getElementById("biliLogoPositionSelect").value = bl.position;
+        if (bl.x_pct !== undefined) document.getElementById("biliLogoXInput").value = bl.x_pct;
+        if (bl.y_pct !== undefined) document.getElementById("biliLogoYInput").value = bl.y_pct;
+        if (bl.w_pct !== undefined) document.getElementById("biliLogoWInput").value = bl.w_pct;
+        if (bl.h_pct !== undefined) document.getElementById("biliLogoHInput").value = bl.h_pct;
+        updateBiliLogoPreview();
+
+        // Đổ cấu hình Watermark AnNamTV
+        const wm = data.settings?.watermark || {};
+        if (wm.enabled !== undefined) document.getElementById("watermarkEnabledCheck").checked = !!wm.enabled;
+        if (wm.text !== undefined) document.getElementById("watermarkTextInput").value = wm.text;
+        if (wm.position !== undefined) document.getElementById("watermarkPositionSelect").value = wm.position;
+        if (wm.font_color !== undefined) document.getElementById("watermarkColorSelect").value = wm.font_color;
+        if (wm.font_size !== undefined) document.getElementById("watermarkSizeInput").value = wm.font_size;
+        if (wm.opacity !== undefined) document.getElementById("watermarkOpacityInput").value = Math.round(wm.opacity * 100);
+        if (wm.box !== undefined) document.getElementById("watermarkBoxCheck").checked = !!wm.box;
+        if (wm.shadow !== undefined) document.getElementById("watermarkShadowCheck").checked = !!wm.shadow;
+        updateWatermarkPreview();
         updateBlurZonePreview();
       }
 
@@ -1569,6 +1808,229 @@
       saveSettingsToServer();
     }
 
+
+    // ================= XỬ LÝ CHE LOGO BILIBILI & WATERMARK ANNAMTV =================
+    function onBiliLogoPresetChange() {
+      const preset = document.getElementById("biliLogoPositionSelect")?.value || "top_right";
+      const xInp = document.getElementById("biliLogoXInput");
+      const yInp = document.getElementById("biliLogoYInput");
+      const wInp = document.getElementById("biliLogoWInput");
+      const hInp = document.getElementById("biliLogoHInput");
+      if (!xInp || !yInp || !wInp || !hInp) return;
+
+      const wVal = parseFloat(wInp.value) || 14.5;
+      const hVal = parseFloat(hInp.value) || 7.5;
+
+      if (preset === "top_right") {
+        xInp.value = 83.5;
+        yInp.value = 3.0;
+      } else if (preset === "top_left") {
+        xInp.value = 2.5;
+        yInp.value = 3.0;
+      } else if (preset === "bottom_right") {
+        xInp.value = (100 - wVal - 2.5).toFixed(1);
+        yInp.value = (100 - hVal - 3.5).toFixed(1);
+      } else if (preset === "bottom_left") {
+        xInp.value = 2.5;
+        yInp.value = (100 - hVal - 3.5).toFixed(1);
+      }
+      updateBiliLogoPreview();
+    }
+
+    function updateBiliLogoPreview() {
+      const box = document.getElementById("biliLogoOverlay");
+      if (!box) return;
+      const enabled = document.getElementById("biliLogoEnabledCheck")?.checked !== false;
+      const mode = document.getElementById("biliLogoModeSelect")?.value || "delogo";
+      if (!enabled || mode === "off") {
+        box.style.display = "none";
+        return;
+      }
+      const xPct = Math.min(96, Math.max(0, parseFloat(document.getElementById("biliLogoXInput")?.value || "83.5")));
+      const yPct = Math.min(96, Math.max(0, parseFloat(document.getElementById("biliLogoYInput")?.value || "3.0")));
+      const wPct = Math.min(45, Math.max(4, parseFloat(document.getElementById("biliLogoWInput")?.value || "14.5")));
+      const hPct = Math.min(30, Math.max(3, parseFloat(document.getElementById("biliLogoHInput")?.value || "7.5")));
+
+      box.style.display = "flex";
+      box.style.left = `${xPct}%`;
+      box.style.top = `${yPct}%`;
+      box.style.width = `${wPct}%`;
+      box.style.height = `${hPct}%`;
+
+      if (mode === "blackbar") {
+        box.style.background = "rgba(0, 0, 0, 0.85)";
+        box.style.backdropFilter = "none";
+      } else {
+        box.style.background = "rgba(88, 28, 135, 0.35)";
+        box.style.backdropFilter = "blur(8px)";
+      }
+    }
+
+    function startBiliLogoDrag(e, actionType) {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = document.getElementById("previewPlayerWrap");
+      const box = document.getElementById("biliLogoOverlay");
+      if (!wrap || !box) return;
+
+      const wrapRect = wrap.getBoundingClientRect();
+      const startMouseX = e.clientX;
+      const startMouseY = e.clientY;
+
+      const startX = parseFloat(document.getElementById("biliLogoXInput")?.value || "83.5");
+      const startY = parseFloat(document.getElementById("biliLogoYInput")?.value || "3.0");
+      const startW = parseFloat(document.getElementById("biliLogoWInput")?.value || "14.5");
+      const startH = parseFloat(document.getElementById("biliLogoHInput")?.value || "7.5");
+
+      function onMove(ev) {
+        const dxPct = ((ev.clientX - startMouseX) / Math.max(1, wrapRect.width)) * 100;
+        const dyPct = ((ev.clientY - startMouseY) / Math.max(1, wrapRect.height)) * 100;
+
+        if (actionType === "move") {
+          const newX = Math.round(Math.min(96 - startW, Math.max(0, startX + dxPct)) * 10) / 10;
+          const newY = Math.round(Math.min(96 - startH, Math.max(0, startY + dyPct)) * 10) / 10;
+          const xInp = document.getElementById("biliLogoXInput");
+          const yInp = document.getElementById("biliLogoYInput");
+          if (xInp) xInp.value = newX;
+          if (yInp) yInp.value = newY;
+          const posSel = document.getElementById("biliLogoPositionSelect");
+          if (posSel) posSel.value = "custom";
+        } else if (actionType === "resize-se") {
+          const newW = Math.round(Math.min(45, Math.max(4, startW + dxPct)) * 10) / 10;
+          const newH = Math.round(Math.min(30, Math.max(3, startH + dyPct)) * 10) / 10;
+          const wInp = document.getElementById("biliLogoWInput");
+          const hInp = document.getElementById("biliLogoHInput");
+          if (wInp) wInp.value = newW;
+          if (hInp) hInp.value = newH;
+        } else if (actionType === "resize-sw") {
+          const newX = Math.round(Math.min(startX + startW - 4, Math.max(0, startX + dxPct)) * 10) / 10;
+          const newW = Math.round((startW - (newX - startX)) * 10) / 10;
+          const newH = Math.round(Math.min(30, Math.max(3, startH + dyPct)) * 10) / 10;
+          const xInp = document.getElementById("biliLogoXInput");
+          const wInp = document.getElementById("biliLogoWInput");
+          const hInp = document.getElementById("biliLogoHInput");
+          if (xInp) xInp.value = newX;
+          if (wInp) wInp.value = newW;
+          if (hInp) hInp.value = newH;
+        }
+        updateBiliLogoPreview();
+      }
+
+      function onUp() {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        saveSettingsToServer();
+      }
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    }
+
+    function updateWatermarkPreview() {
+      const box = document.getElementById("watermarkLiveOverlay");
+      const txtSpan = document.getElementById("watermarkLiveText");
+      if (!box || !txtSpan) return;
+
+      const enabled = document.getElementById("watermarkEnabledCheck")?.checked !== false;
+      const text = document.getElementById("watermarkTextInput")?.value || "AnNamTV";
+      if (!enabled || !text.trim()) {
+        box.style.display = "none";
+        return;
+      }
+      box.style.display = "block";
+      txtSpan.textContent = text.trim();
+
+      const pos = document.getElementById("watermarkPositionSelect")?.value || "top_right";
+      const colorVal = document.getElementById("watermarkColorSelect")?.value || "yellow";
+      const sizeVal = parseInt(document.getElementById("watermarkSizeInput")?.value || "36", 10);
+      const opacityVal = Math.min(100, Math.max(20, parseInt(document.getElementById("watermarkOpacityInput")?.value || "85", 10))) / 100.0;
+      const useBox = document.getElementById("watermarkBoxCheck")?.checked !== false;
+      const useShadow = document.getElementById("watermarkShadowCheck")?.checked !== false;
+
+      // Color map
+      const colorMap = {
+        yellow: "#facc15",
+        white: "#ffffff",
+        orange: "#fb923c",
+        cyan: "#38bdf8",
+      };
+      const hex = colorMap[colorVal] || colorVal;
+
+      // Position
+      box.style.left = "auto";
+      box.style.right = "auto";
+      box.style.top = "auto";
+      box.style.bottom = "auto";
+      box.style.transform = "none";
+
+      if (pos === "top_left") {
+        box.style.left = "20px";
+        box.style.top = "18px";
+      } else if (pos === "bottom_right") {
+        box.style.right = "20px";
+        box.style.bottom = "24px";
+      } else if (pos === "bottom_left") {
+        box.style.left = "20px";
+        box.style.bottom = "24px";
+      } else if (pos === "center") {
+        box.style.left = "50%";
+        box.style.top = "50%";
+        box.style.transform = "translate(-50%, -50%)";
+      } else {
+        // top_right mặc định
+        box.style.right = "20px";
+        box.style.top = "18px";
+      }
+
+      // Preview scale font-size for preview player (approx 55% of full 1080p height)
+      const previewFontSize = Math.max(12, Math.round(sizeVal * 0.52));
+      txtSpan.style.fontSize = `${previewFontSize}px`;
+      txtSpan.style.color = hex;
+      txtSpan.style.opacity = `${opacityVal}`;
+
+      if (useBox) {
+        txtSpan.style.background = `rgba(0, 0, 0, ${Math.min(0.85, opacityVal * 0.65)})`;
+        txtSpan.style.padding = "3px 8px";
+        txtSpan.style.borderRadius = "5px";
+        txtSpan.style.border = "1px solid rgba(0,0,0,0.6)";
+      } else {
+        txtSpan.style.background = "transparent";
+        txtSpan.style.padding = "0";
+        txtSpan.style.border = "none";
+      }
+
+      if (useShadow) {
+        txtSpan.style.textShadow = "0 2px 4px rgba(0,0,0,0.9)";
+      } else {
+        txtSpan.style.textShadow = "none";
+      }
+    }
+
+    function getBiliLogoCfg() {
+      return {
+        enabled: document.getElementById("biliLogoEnabledCheck")?.checked !== false,
+        mode: document.getElementById("biliLogoModeSelect")?.value || "delogo",
+        position: document.getElementById("biliLogoPositionSelect")?.value || "top_right",
+        x_pct: parseFloat(document.getElementById("biliLogoXInput")?.value || "83.5"),
+        y_pct: parseFloat(document.getElementById("biliLogoYInput")?.value || "3.0"),
+        w_pct: parseFloat(document.getElementById("biliLogoWInput")?.value || "14.5"),
+        h_pct: parseFloat(document.getElementById("biliLogoHInput")?.value || "7.5"),
+      };
+    }
+
+    function getWatermarkCfg() {
+      return {
+        enabled: document.getElementById("watermarkEnabledCheck")?.checked !== false,
+        text: document.getElementById("watermarkTextInput")?.value || "AnNamTV",
+        position: document.getElementById("watermarkPositionSelect")?.value || "top_right",
+        font_color: document.getElementById("watermarkColorSelect")?.value || "yellow",
+        font_size: parseInt(document.getElementById("watermarkSizeInput")?.value || "36", 10),
+        opacity: (parseFloat(document.getElementById("watermarkOpacityInput")?.value || "85") || 85) / 100.0,
+        box: document.getElementById("watermarkBoxCheck")?.checked !== false,
+        shadow: document.getElementById("watermarkShadowCheck")?.checked !== false,
+      };
+    }
+
     function updateBlurZonePreview() {
       const box = document.getElementById("blurZoneOverlay");
       if (!box) return;
@@ -1607,13 +2069,23 @@
       const btn = document.getElementById("blurNowBtn");
       if (btn) {
         btn.disabled = true;
-        btn.textContent = "⏳ Đang xóa mờ chữ Trung...";
+        btn.textContent = "⏳ Đang Che Logo & Gắn Watermark...";
       }
       try {
         const res = await fetch("/api/blur-video-now", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: srtTargetPath }),
+          body: JSON.stringify({
+            path: srtTargetPath,
+            blur_sub: {
+              mode: document.getElementById("blurSubModeSelect")?.value,
+              y_pct: parseFloat(document.getElementById("blurSubYInput")?.value || "86"),
+              h_pct: parseFloat(document.getElementById("blurSubHInput")?.value || "10"),
+              w_pct: parseFloat(document.getElementById("blurSubWInput")?.value || "82"),
+            },
+            bili_logo: getBiliLogoCfg(),
+            watermark: getWatermarkCfg(),
+          }),
         });
         const data = await res.json();
         if (!data.ok) {
@@ -1628,7 +2100,7 @@
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "🌫️ Làm Mờ Chữ Trung Cho Video Này Ngay";
+          btn.textContent = "⚡ Che Logo Bili & Watermark & Mờ Sub Ngay";
         }
       }
     }
@@ -1690,6 +2162,7 @@
     }
 
     function onPreviewTimeUpdate() {
+      if (typeof _syncAudioToVideo === "function") _syncAudioToVideo(false);
       const player = document.getElementById("previewVideoPlayer");
       const overlay = document.getElementById("liveSubOverlay");
       const viEl = document.getElementById("liveSubViText");
@@ -2077,6 +2550,8 @@
             h_pct: parseFloat(document.getElementById("blurSubHInput").value || "10"),
             w_pct: parseFloat(document.getElementById("blurSubWInput").value || "82"),
           },
+          bili_logo: getBiliLogoCfg(),
+          watermark: getWatermarkCfg(),
         },
       };
       const res = await fetch("/api/update-config", {
@@ -2382,21 +2857,102 @@
     }
 
     let currentLoadedMp3Path = "";
+    let mp3PreviewOffset = 0; // giây của video ứng với giây 0 của file MP3 (file thử 10s có offset)
+    let voiceTestInfo = null;
 
-    function loadMp3IntoPreviewAudio(mp3Path) {
+    function getTtsVoiceCfg() {
+      return {
+        tts_speed: parseFloat(document.getElementById("ttsSpeedInput")?.value || "1.3"),
+        tts_pitch: parseInt(document.getElementById("ttsPitchInput")?.value || "0", 10),
+        tts_uniform: document.getElementById("ttsUniformCheck")?.checked !== false,
+      };
+    }
+
+    function loadMp3IntoPreviewAudio(mp3Path, offsetSec = 0, forceReload = false) {
       if (!mp3Path) return;
       const aud = document.getElementById("ttsAudioPreviewPlayer");
       if (!aud) return;
-      if (currentLoadedMp3Path !== mp3Path) {
+      mp3PreviewOffset = offsetSec || 0;
+      if (currentLoadedMp3Path !== mp3Path || forceReload) {
         currentLoadedMp3Path = mp3Path;
-        aud.src = `/api/video-stream?path=${encodeURIComponent(mp3Path)}`;
+        aud.src = `/api/video-stream?path=${encodeURIComponent(mp3Path)}&t=${Date.now()}`;
         aud.load();
       }
     }
 
+    function _syncAudioToVideo(force = false) {
+      const vid = document.getElementById("previewVideoPlayer");
+      const aud = document.getElementById("ttsAudioPreviewPlayer");
+      const syncOn = document.getElementById("syncMp3WithVideoCheck")?.checked;
+      if (!vid || !aud || !syncOn || !currentLoadedMp3Path || isPreviewingAlreadyDubbedVideo()) return;
+      const target = (vid.currentTime || 0) - mp3PreviewOffset;
+      const dur = isFinite(aud.duration) ? aud.duration : Infinity;
+      if (target < 0 || target > dur) {
+        if (!aud.paused) aud.pause();
+        return;
+      }
+      if (force || Math.abs((aud.currentTime || 0) - target) > 0.3) aud.currentTime = target;
+      aud.playbackRate = vid.playbackRate || 1.0;
+      if (!vid.paused && aud.paused) aud.play().catch(() => {});
+    }
+
+    async function generateVoiceTestMp3() {
+      if (!srtRowsData.some((row) => (row.vi_text || "").trim())) {
+        alert("Chưa có phụ đề Tiếng Việt trong bảng để thử giọng.");
+        return;
+      }
+      const btn = document.getElementById("ttsTestBtn");
+      const vid = document.getElementById("previewVideoPlayer");
+      const startSec = vid ? vid.currentTime || 0 : 0;
+      const voice = document.getElementById("ttsVoiceSelect")?.value || "vi-VN-NamMinhNeural";
+      if (btn) { btn.disabled = true; btn.textContent = "⏳ Đang tạo MP3 thử 10s..."; }
+      try {
+        const res = await fetch("/api/srt/tts-test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ srt_rows: srtRowsData, voice, start_sec: startSec, duration_sec: 10, ...getTtsVoiceCfg() }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert("Lỗi tạo MP3 thử: " + data.message);
+          return;
+        }
+        voiceTestInfo = data;
+        loadMp3IntoPreviewAudio(data.test_mp3, data.start_sec, true);
+        document.getElementById("ttsTestInfo").textContent = data.message;
+        document.getElementById("srtStatusLabel").textContent = data.message;
+        playVoiceTestInVideo();
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "🎧 Tạo MP3 Thử 10 Giây (từ vị trí video đang dừng)"; }
+      }
+    }
+
+    function playVoiceTestInVideo() {
+      if (!voiceTestInfo) {
+        alert("Hãy bấm '🎧 Tạo MP3 Thử 10 Giây' trước.");
+        return;
+      }
+      const vid = document.getElementById("previewVideoPlayer");
+      const syncChk = document.getElementById("syncMp3WithVideoCheck");
+      if (syncChk) syncChk.checked = true;
+      loadMp3IntoPreviewAudio(voiceTestInfo.test_mp3, voiceTestInfo.start_sec);
+      if (!vid) return;
+      vid.currentTime = voiceTestInfo.start_sec;
+      onMixerVolumeChange();
+      vid.play().catch(() => {});
+      const stopAt = voiceTestInfo.start_sec + (voiceTestInfo.duration_sec || 10);
+      const stopper = () => {
+        if (vid.currentTime >= stopAt) {
+          vid.pause();
+          vid.removeEventListener("timeupdate", stopper);
+        }
+      };
+      vid.addEventListener("timeupdate", stopper);
+    }
+
     function onSelectCapcutAudio(mp3Path) {
       if (mp3Path) {
-        loadMp3IntoPreviewAudio(mp3Path);
+        loadMp3IntoPreviewAudio(mp3Path, 0);
       }
     }
 
@@ -2443,13 +2999,7 @@
       const aud = document.getElementById("ttsAudioPreviewPlayer");
       const syncOn = document.getElementById("syncMp3WithVideoCheck")?.checked;
       onMixerVolumeChange();
-      if (vid && aud && syncOn && currentLoadedMp3Path && !isPreviewingAlreadyDubbedVideo()) {
-        if (Math.abs((aud.currentTime || 0) - (vid.currentTime || 0)) > 0.25) {
-          aud.currentTime = vid.currentTime || 0;
-        }
-        aud.playbackRate = vid.playbackRate || 1.0;
-        aud.play().catch(() => {});
-      }
+      if (vid && aud && syncOn) _syncAudioToVideo(true);
     }
 
     function onPreviewPauseSync() {
@@ -2463,9 +3013,7 @@
       const vid = document.getElementById("previewVideoPlayer");
       const aud = document.getElementById("ttsAudioPreviewPlayer");
       const syncOn = document.getElementById("syncMp3WithVideoCheck")?.checked;
-      if (vid && aud && syncOn && currentLoadedMp3Path && !isPreviewingAlreadyDubbedVideo()) {
-        aud.currentTime = vid.currentTime || 0;
-      }
+      if (vid && aud && syncOn) _syncAudioToVideo(true);
     }
 
     function updateCapcutSubPreviewStyle() {
@@ -2538,7 +3086,7 @@
         const res = await fetch("/api/srt/generate-tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ srt_rows: srtRowsData, voice, only_mp3: true }),
+          body: JSON.stringify({ srt_rows: srtRowsData, voice, only_mp3: true, ...getTtsVoiceCfg() }),
         });
         const data = await res.json();
         if (!data.ok) {
@@ -2582,7 +3130,7 @@
         const res = await fetch("/api/srt/generate-tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ srt_rows: srtRowsData, voice, only_mp3: true }),
+          body: JSON.stringify({ srt_rows: srtRowsData, voice, only_mp3: true, ...getTtsVoiceCfg() }),
         });
         const data = await res.json();
         if (!data.ok) {
@@ -2605,13 +3153,14 @@
       }
     }
 
-    async function exportCapcutVideoNow() {
+    async function exportCapcutVideoNow(fastMux = false) {
       if (!srtTargetPath) {
         alert("Chưa có video để xuất! Hãy chọn video ở mục Xem Trước Video.");
         return;
       }
       await saveSettingsToServer();
-      const btn = document.getElementById("capcutExportBtn");
+      const btn = fastMux ? document.getElementById("fastExportBtn") : document.getElementById("capcutExportBtn");
+      const useGpu = document.getElementById("enableGpuExportCheck")?.checked !== false;
       const audioPath = document.getElementById("capcutAudioSelect")?.value || currentLoadedMp3Path || "";
       const voice = document.getElementById("ttsVoiceSelect")?.value || "vi-VN-NamMinhNeural";
       const origVol = parseFloat(document.getElementById("capcutOrigVolInput")?.value || "0.12");
@@ -2647,9 +3196,23 @@
             video_path: srtTargetPath,
             audio_path: audioPath,
             voice,
+            ...getTtsVoiceCfg(),
             srt_rows: srtRowsData,
-            blur_sub: blurSub,
-            burn_sub: burnSub,
+            fast_mux: fastMux,
+            use_gpu: useGpu,
+            blur_sub: fastMux ? { mode: "off" } : blurSub,
+            burn_sub: fastMux ? { enabled: false } : burnSub,
+            bili_logo: fastMux ? { mode: "off" } : getBiliLogoCfg(),
+            watermark: fastMux ? { enabled: false } : getWatermarkCfg(),
+            anti_copyright: fastMux ? { enabled: false } : {
+              enabled: document.getElementById("antiCopyrightLevel")?.value !== "off",
+              level: document.getElementById("antiCopyrightLevel")?.value === "off" ? "basic" : (document.getElementById("antiCopyrightLevel")?.value || "hardcore"),
+              flip_horizontal: !!document.getElementById("flipHorizontalCheck")?.checked,
+              speed_factor: 1.0,
+              pitch_shift: parseFloat(document.getElementById("acPitchInput")?.value || "1.00"),
+              zoom_factor: parseFloat(document.getElementById("acZoomInput")?.value || "1.045"),
+              contrast: parseFloat(document.getElementById("acContrastInput")?.value || "1.05"),
+            },
             original_vol: origVol,
             tts_vol: ttsVol,
           }),
@@ -2670,7 +3233,7 @@
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "🎬 3B. XUẤT VIDEO ĐÃ CHỈNH KIỂU CAPCUT (RA FILE .MP4 NGAY)";
+          btn.textContent = fastMux ? "⚡ 3B-1. XUẤT SIÊU TỐC (CHỈ GHÉP MP3 - 10 GIÂY)" : "🚀 KẾT XUẤT VIDEO HOÀN CHỈNH BẰNG GPU (FULL TẤT CẢ)";
         }
       }
     }
@@ -2692,7 +3255,7 @@
         const res = await fetch("/api/srt/generate-tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ srt_rows: srtRowsData, voice }),
+          body: JSON.stringify({ srt_rows: srtRowsData, voice, ...getTtsVoiceCfg() }),
         });
         const data = await res.json();
         if (!data.ok) {
@@ -2822,7 +3385,7 @@
       const mode = document.getElementById("workflowModeSelect").value;
       document.getElementById("startBtn").textContent = {
         full: "🚀 CHẠY A → Z CÁC PHẦN ĐÃ CHỌN",
-        srt: "🚀 XUẤT VIDEO + SRT CÁC PHẦN ĐÃ CHỌN",
+        srt: "⚡ BƯỚC 1: CẮT VIDEO SIÊU TỐC + TỰ XUẤT FILE .SRT TIẾNG VIỆT (GPU)",
         video: "🚀 CẮT & XUẤT VIDEO CÁC PHẦN ĐÃ CHỌN",
       }[mode];
     }
