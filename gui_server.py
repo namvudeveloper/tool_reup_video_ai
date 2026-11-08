@@ -41,6 +41,8 @@ from core.processor import (
 )
 from core.system_check import check_disk_space, find_ffmpeg_binaries, get_os_name, select_video_encoder
 from core.part_workflow import WorkflowStopped, part_folder, process_part, safe_name
+from core.output_library import scan_output_library
+from core.media_waveform import read_waveform
 
 if sys.platform == "win32":
     try:
@@ -224,7 +226,7 @@ class PipelineState:
                     "srt_path": str(vi.resolve()) if vi.is_file() else "",
                     "audio_vi": str(mp3.resolve()) if mp3.is_file() else "",
                     "stage": checkpoint.get("stage", "video"),
-                    "status": checkpoint.get("status", "complete"),
+                    "status": "stopped" if checkpoint.get("status") == "running" else checkpoint.get("status", "complete"),
                     "error": checkpoint.get("error", ""),
                 }
             )
@@ -269,6 +271,12 @@ def _list_available_preview_videos() -> List[Dict[str, str]]:
     """Liệt kê tất cả các file video có thể xem trước (trong output/ và file gốc trên máy)."""
     seen = set()
     videos: List[Dict[str, str]] = []
+
+    active = Path(STATE.active_video_for_srt) if STATE.active_video_for_srt else None
+    if active and active.is_file():
+        resolved = str(active.resolve())
+        videos.append({"path": resolved, "name": active.name, "label": active.name})
+        seen.add(resolved)
 
     if OUTPUT_DIR.is_dir():
         out_files = sorted(
@@ -586,7 +594,8 @@ def _run_asset_batch_worker(jobs: List[Dict[str, Any]], mode: str, settings: Dic
             with STATE.lock:
                 STATE.current_chunk_idx = job["chunk_index"]
             video = Path(job["path"])
-            if video.parent.parent == OUTPUT_DIR or (video.parent / ".work/progress.json").is_file():
+            if (video.parent.resolve() != OUTPUT_DIR.resolve()
+                    and video.parent.resolve().is_relative_to(OUTPUT_DIR.resolve())):
                 folder = video.parent
             else:
                 project = re.sub(r"_Phan_\d+$", "", video.stem, flags=re.IGNORECASE)
@@ -1158,6 +1167,44 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
+        if path in {"/assets/studio.css", "/assets/studio.js", "/assets/timeline.js"}:
+            target = WEB_UI_DIR / Path(path).name
+            if not target.is_file():
+                self.send_error(404)
+                return
+            content = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8" if target.suffix == ".css" else "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(content)
+            return
+
+        if path == "/api/waveform":
+            qs = urllib.parse.parse_qs(parsed.query)
+            requested = (qs.get("path", [""])[0] or "").strip()
+            target = Path(requested).resolve() if requested else None
+            active = _get_srt_target()
+            allowed = target and (target.is_relative_to(OUTPUT_DIR.resolve())
+                                  or (active and target == Path(active).resolve()))
+            if not allowed or not target.is_file() or target.suffix.lower() not in VIDEO_EXTENSIONS | {".mp3", ".wav", ".m4a"}:
+                self._send_json({"message": "Không tìm thấy file âm thanh trong dự án."}, status=404)
+                return
+            try:
+                start = float(qs.get("start", ["0"])[0])
+                duration = float(qs["duration"][0]) if "duration" in qs else None
+                self._send_json(read_waveform(target, STATE.ffmpeg_path or "ffmpeg", start, duration))
+            except (OSError, ValueError, subprocess.SubprocessError):
+                self._send_json({"message": "Không đọc được sóng âm của file này."}, status=422)
+            return
+
+        if path == "/api/library":
+            with STATE.lock:
+                records = deepcopy(STATE.finished_outputs)
+            self._send_json(scan_output_library(OUTPUT_DIR, records))
+            return
+
         if path in ("/", "/index.html"):
             index_file = WEB_UI_DIR / "index.html"
             content = index_file.read_bytes()
@@ -1552,6 +1599,64 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             return self._send_current_plan(reset_selection=True)
 
         # ================== API BẢNG SỬA PHỤ ĐỀ (.SRT) THỦ CÔNG & LỒNG TIẾNG ==================
+        if path == "/api/srt/import":
+            source = str(body.get("source_path", "") or "").strip()
+            if source.lower().startswith("file:"):
+                uri = urllib.parse.urlparse(source)
+                if uri.netloc not in {"", "localhost"}:
+                    self._send_json({"ok": False, "message": "Chỉ mở được file SRT trên máy này."}, status=400)
+                    return
+                source = urllib.parse.unquote(uri.path)
+                if sys.platform == "win32" and re.match(r"^/[A-Za-z]:/", source):
+                    source = source[1:]
+            source_path = Path(source).resolve() if source else None
+            filename = Path(str(body.get("filename", "phu_de.vi.srt")).replace("\\", "/")).name
+            try:
+                if source_path:
+                    if source_path.suffix.lower() != ".srt" or not source_path.is_file():
+                        raise ValueError("Không tìm thấy file .SRT đã thả.")
+                    if source_path.stat().st_size > 4 * 1024 * 1024:
+                        raise ValueError("File SRT vượt quá 4 MB. Hãy chia nhỏ phụ đề trước.")
+                    raw = source_path.read_text(encoding="utf-8-sig")
+                    filename = source_path.name
+                else:
+                    raw = body.get("text", "")
+                    if not isinstance(raw, str) or not filename.lower().endswith(".srt"):
+                        raise ValueError("Hãy chọn một file .SRT hợp lệ.")
+                    if len(raw.encode("utf-8")) > 4 * 1024 * 1024:
+                        raise ValueError("File SRT vượt quá 4 MB. Hãy chia nhỏ phụ đề trước.")
+                cues = parse_srt_text(raw)
+                timestamp = re.compile(r"\d{2,}:[0-5]\d:[0-5]\d[,.]\d{3}")
+                if not cues or any(not timestamp.fullmatch(c["start"]) or not timestamp.fullmatch(c["end"]) for c in cues):
+                    raise ValueError("File không có phụ đề SRT hợp lệ. Phụ đề đang mở được giữ nguyên.")
+            except (OSError, UnicodeError, ValueError) as exc:
+                self._send_json({"ok": False, "message": str(exc)}, status=400)
+                return
+            # A browser File does not expose its original path. Give imports their
+            # own save destination instead of overwriting the previous document.
+            digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+            destination = source_path or SRT_WORK_DIR / "imported" / digest / filename
+            rows = [{"index": c["index"], "start": c["start"], "end": c["end"],
+                     "zh_text": "", "vi_text": c["text"]} for c in cues]
+            if source_path:
+                stem = re.sub(r"\.(?:vi|zh)$", "", source_path.stem, flags=re.I)
+                matching_video = next((source_path.with_name(stem + ext) for ext in sorted(VIDEO_EXTENSIONS)
+                                       if source_path.with_name(stem + ext).is_file()), None)
+            else:
+                matching_video = None
+            with STATE.lock:
+                if matching_video:
+                    STATE.active_video_for_srt = str(matching_video)
+                STATE.srt_rows = rows
+                STATE.active_srt_path = str(destination)
+                STATE.srt_status_msg = f"Đã mở {filename} ({len(rows)} câu). Bấm Lưu SRT để lưu bản sửa."
+                response = {"ok": True, "srt_rows": rows, "active_srt_path": str(destination),
+                            "srt_status_msg": STATE.srt_status_msg}
+            response.update(active_video_for_srt=_get_srt_target(), available_videos=_list_available_preview_videos(),
+                            available_audios=_list_available_tts_audios())
+            self._send_json(response)
+            return
+
         if path == "/api/srt/pick-file":
             chosen_srt = _native_pick_srt_file()
             if chosen_srt and Path(chosen_srt).is_file():
@@ -1960,11 +2065,14 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             if mode not in {"srt", "mp3", "full"} or not isinstance(paths, list) or not paths:
                 self._send_json({"ok": False, "message": "Hãy chọn video và bước cần chạy."}, status=400)
                 return
+            library = scan_output_library(OUTPUT_DIR)
+            disk_parts = [part for project in library["projects"] for part in project["parts"] if part["path"]]
             with STATE.lock:
                 if STATE.is_running or STATE.manual_asset_busy:
                     self._send_json({"ok": False, "message": "Có tác vụ đang chạy; hãy chờ hoặc bấm Dừng trước."}, status=409)
                     return
-                known = {str(Path(r["path"]).resolve()): r for r in STATE.finished_outputs}
+                known = {str(Path(r["path"]).resolve()): r for r in disk_parts}
+                known.update({str(Path(r["path"]).resolve()): r for r in STATE.finished_outputs})
                 selected_paths = list(dict.fromkeys(str(Path(str(p)).resolve()) for p in paths))
                 if any(p not in known or not Path(p).is_file() for p in selected_paths):
                     self._send_json({"ok": False, "message": "Video đã chọn không còn trong danh sách đầu ra. Hãy tải lại trang."}, status=400)
