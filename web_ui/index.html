@@ -723,8 +723,8 @@
             <button class="btn btn-success" onclick="pickNativeFiles()">
               📂 Chọn File Video Trên Máy
             </button>
-            <button class="btn btn-purple" onclick="pickNativeFolder()">
-              📁 Chọn Cả Thư Mục Phim
+            <button class="btn btn-purple" onclick="pickNativeFolder()" title="Chọn 1 thư mục phim cha (tự nhận 34 folder con Phan_01..34) HOẶC giữ Ctrl/Shift chọn 34 folder con cùng lúc!">
+              📁 Chọn Thư Mục Phim / Chọn 34 Folder Con (Phan_01 ➔ 34)
             </button>
             <button class="btn btn-outline" onclick="openLinkModal()">
               🔗 Dán Link Bilibili / YouTube
@@ -1208,16 +1208,78 @@
           <div class="progress-text" id="epProgText">0%</div>
         </div>
 
-        <div id="finishedBox" style="display: none; margin-top: 14px;">
+        <div id="finishedBox" style="display: block; margin-top: 14px;">
+          <!-- THANH CHỌN THƯ MỤC PHIM CHA HOẶC CHỌN CÙNG LÚC 34 FOLDER CON (Phan_01 -> Phan_34) -->
+          <div style="background: rgba(15, 23, 42, 0.85); border: 1.5px solid #8b5cf6; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+            <div style="font-weight: 800; font-size: 13.5px; color: #ddd6fe; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+              <span>📁 Chọn Bộ Phim Nhiều Phần (Tự hiểu `Phan_01` ➔ `Phan_34` là Tập 1 ➔ 34 hoặc giữ Ctrl/Shift chọn 34 folder con):</span>
+              <button class="btn btn-outline" style="padding: 4px 10px; font-size: 11.5px;" onclick="openOutputFolder()">📂 Mở Thư Mục Phim</button>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <select id="filmFolderSelect" class="form-input" style="flex: 1; min-width: 240px;" onchange="if(this.value) loadFilmFolderByPath(this.value)">
+                <option value="">-- Chọn nhanh bộ phim có sẵn trong output/ --</option>
+              </select>
+              <button class="btn btn-purple" style="padding: 9px 14px; font-weight: 800;" onclick="pickPartFoldersDialog()">
+                📁 Chọn Folder Phim Cha / Chọn Nhiều Folder Con (Phan_01..34)
+              </button>
+            </div>
+          </div>
+
+          <!-- HỘP THUYẾT MINH 1 GIỌNG DUY NHẤT & TỰ GHÉP 34 PHẦN THÀNH 1 VIDEO FULL -->
+          <div style="background: linear-gradient(145deg, rgba(6, 78, 59, 0.35), rgba(15, 23, 42, 0.9)); border: 1.5px solid #10b981; border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+            <div style="font-weight: 900; font-size: 14px; color: #6ee7b7; margin-bottom: 8px;">
+              🎙️ Thuyết Minh (Chỉ 1 Giọng Duy Nhất) & Tự Ghép Các Phần Đã Chọn Thành 1 Video FULL
+            </div>
+            <div style="display: grid; grid-template-columns: 1.3fr 0.8fr 0.8fr 1.1fr; gap: 8px; align-items: end; margin-bottom: 10px;">
+              <div>
+                <label style="font-size: 11.5px; color: #cbd5e1; display: block; margin-bottom: 3px;">🗣️ Giọng đọc cố định (1 giọng duy nhất):</label>
+                <select id="batchSingleVoiceSelect" class="form-input" style="padding: 6px 8px; font-size: 12.5px;" onchange="syncWorkflowSetting('voice', this.value)">
+                  <option value="vi-VN-NamMinhNeural" selected>🎙️ Nam Minh (1 Giọng Nam Duy Nhất)</option>
+                  <option value="vi-VN-HoaiMyNeural">🎙️ Hoài My (1 Giọng Nữ Duy Nhất)</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 11.5px; color: #cbd5e1; display: block; margin-bottom: 3px;">🚀 Tốc độ đọc:</label>
+                <input type="number" id="batchTtsSpeedInput" class="form-input" value="1.30" min="0.8" max="2.0" step="0.05" style="padding: 6px 8px; font-size: 12.5px;" />
+              </div>
+              <div>
+                <label style="font-size: 11.5px; color: #cbd5e1; display: block; margin-bottom: 3px;">🎵 Âm gốc nền (%):</label>
+                <input type="number" id="batchOrigVolPctInput" class="form-input" value="12" min="0" max="100" step="2" style="padding: 6px 8px; font-size: 12.5px;" />
+              </div>
+              <div>
+                <label style="font-size: 11.5px; color: #cbd5e1; display: block; margin-bottom: 3px;">⚡ Chế độ ghép từng phần:</label>
+                <select id="batchFastMuxSelect" class="form-input" style="padding: 6px 8px; font-size: 12.5px;">
+                  <option value="fast" selected>⚡ Siêu Tốc (Stream Copy - Giữ nguyên hình)</option>
+                  <option value="gpu">🎮 Render Full GPU (Che Sub + In Sub Vàng)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #fde047; font-weight: 700; cursor: pointer;">
+                  <input type="checkbox" id="batchMergeFullCheck" checked style="width: 15px; height: 15px; accent-color: #10b981;" />
+                  🔗 Tự nối tất cả các phần đã chọn thành 1 Video FULL duy nhất
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; cursor: pointer;" title="Bật nếu muốn tạo lại toàn bộ file MP3 thuyết minh mới từ SRT đã sửa">
+                  <input type="checkbox" id="batchForceRegenMp3Check" style="width: 15px; height: 15px; accent-color: #f59e0b;" />
+                  🔄 Tạo lại MP3 mới cho tất cả các phần
+                </label>
+              </div>
+              <button class="btn btn-success" id="dubAndMergeAllBtn" data-workflow-action onclick="runDubAndMergeParts()" style="padding: 10px 18px; font-weight: 900; font-size: 13.5px; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);">
+                🚀 THUYẾT MINH 1 GIỌNG & GHÉP CÁC PHẦN ĐÃ CHỌN THÀNH 1 VIDEO FULL
+              </button>
+            </div>
+          </div>
+
           <div style="font-weight: 800; font-size: 13.5px; color: #10b981; margin-bottom: 6px;">
-            📦 Các phần đã xuất — chọn nhiều phần để tạo SRT / MP3
+            📦 Danh sách các phần (Tập 1 ➔ Tập N) — tích chọn để chạy thuyết minh & ghép
           </div>
           <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0;">
             <button class="btn btn-outline" onclick="selectExportedParts(true)">Chọn tất cả</button>
             <button class="btn btn-outline" onclick="selectExportedParts(false)">Bỏ chọn</button>
             <span id="exportedSelectionLabel" style="font-size:12px; color:var(--muted);"></span>
             <button class="btn btn-primary" data-workflow-action onclick="runBatchAssets('srt')">📝 Tạo SRT các phần đã chọn</button>
-            <button class="btn btn-primary" data-workflow-action onclick="runBatchAssets('mp3')">🔊 Tạo MP3 từ SRT đã có</button>
+            <button class="btn btn-primary" data-workflow-action onclick="runBatchAssets('mp3')">🔊 Chỉ tạo MP3 (1 giọng) từ SRT đã có</button>
             <button class="btn btn-success" data-workflow-action onclick="runBatchAssets('full')">⚡ Làm tiếp SRT → MP3</button>
           </div>
           <div id="finishedList" class="chunk-grid" style="max-height: 440px;"></div>
@@ -2316,8 +2378,11 @@
         document.getElementById("workflowModelSelect").value = data.settings?.whisper_model || "small";
         document.getElementById("workflowVoiceSelect").value = data.settings?.tts_voice || "vi-VN-NamMinhNeural";
         document.getElementById("ttsVoiceSelect").value = data.settings?.tts_voice || "vi-VN-NamMinhNeural";
+        const batchVoiceEl = document.getElementById("batchSingleVoiceSelect");
+        if (batchVoiceEl) batchVoiceEl.value = data.settings?.tts_voice || "vi-VN-NamMinhNeural";
         document.getElementById("workflowModeSelect").value = data.settings?.workflow_mode || "full";
         updateWorkflowLabel();
+        renderFilmFolderSelect(data.available_film_folders || [], data.active_film_folder || "");
         renderFinishedOutputs(data.finished_outputs || []);
         const ac = data.settings?.anti_copyright || {};
         document.getElementById("antiCopyrightLevel").value = ac.enabled === false ? "off" : (ac.level || "hardcore");
@@ -2573,11 +2638,69 @@
       if (data.plan) renderPlan(data.plan);
     }
 
+    function applyScannedFolderResponse(data) {
+      if (!data) return;
+      if (data.project_name) {
+        const pInp = document.getElementById("projectNameInput");
+        if (pInp) pInp.value = data.project_name;
+      }
+      if (data.available_film_folders) {
+        renderFilmFolderSelect(data.available_film_folders, data.active_film_folder || "");
+      }
+      if (Array.isArray(data.finished_outputs)) {
+        seenOutputPaths.clear();
+        selectedOutputPaths = new Set(data.finished_outputs.map((f) => f.path));
+        finishedSignature = "";
+        renderFinishedOutputs(data.finished_outputs);
+      }
+      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
+      if (data.plan) renderPlan(data.plan);
+      renderSrtTarget(data);
+      if (data.srt_status_msg) {
+        document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
+        document.getElementById("statusPhaseText").textContent = `Trạng thái: ${data.srt_status_msg}`;
+      }
+    }
+
+    function renderFilmFolderSelect(folders, activeFolder = "") {
+      const sel = document.getElementById("filmFolderSelect");
+      if (!sel) return;
+      const sig = JSON.stringify(folders) + "::" + activeFolder;
+      if (sel.dataset.sig === sig) return;
+      sel.dataset.sig = sig;
+      let html = `<option value="">-- Chọn bộ phim có sẵn trong output/ (${folders.length} bộ) --</option>`;
+      folders.forEach((f) => {
+        const isSel = activeFolder && f.path.toLowerCase() === activeFolder.toLowerCase() ? "selected" : "";
+        html += `<option value="${f.path.replace(/"/g, "&quot;")}" ${isSel}>${f.label}</option>`;
+      });
+      sel.innerHTML = html;
+    }
+
     async function pickNativeFolder() {
       const res = await fetch("/api/pick-folder", { method: "POST", body: "{}" });
       const data = await res.json();
-      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
-      if (data.plan) renderPlan(data.plan);
+      applyScannedFolderResponse(data);
+    }
+
+    async function pickPartFoldersDialog() {
+      const res = await fetch("/api/pick-part-folders", { method: "POST", body: "{}" });
+      const data = await res.json();
+      applyScannedFolderResponse(data);
+    }
+
+    async function loadFilmFolderByPath(folderPath) {
+      if (!folderPath) return;
+      const res = await fetch("/api/load-film-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: folderPath }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message || "Không thể nạp thư mục phim.");
+        return;
+      }
+      applyScannedFolderResponse(data);
     }
 
     async function reorderAction(action, index = -1) {
@@ -2631,8 +2754,7 @@
         body: JSON.stringify({ files: descriptors }),
       });
       const data = await res.json();
-      if (data.selected_chunks) selectedChunkSet = new Set(data.selected_chunks);
-      if (data.plan) renderPlan(data.plan);
+      applyScannedFolderResponse(data);
 
       const unresolved = data.unresolved_indices || [];
       if (unresolved.length > 0) {
@@ -3391,13 +3513,24 @@
     }
 
     async function syncWorkflowSetting(kind, value) {
-      const ids = kind === "model" ? ["whisperModelSelect", "workflowModelSelect"] : ["ttsVoiceSelect", "workflowVoiceSelect"];
-      ids.forEach((id) => { document.getElementById(id).value = value; });
+      const ids = kind === "model"
+        ? ["whisperModelSelect", "workflowModelSelect"]
+        : ["ttsVoiceSelect", "workflowVoiceSelect", "batchSingleVoiceSelect"];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+      });
       await saveSettingsToServer();
     }
 
     function updateExportedSelectionLabel() {
-      document.getElementById("exportedSelectionLabel").textContent = `Đã chọn ${selectedOutputPaths.size}/${currentFinishedOutputs.length} phần`;
+      const lbl = document.getElementById("exportedSelectionLabel");
+      if (lbl) lbl.textContent = `Đã chọn ${selectedOutputPaths.size}/${currentFinishedOutputs.length} phần`;
+      const dubBtn = document.getElementById("dubAndMergeAllBtn");
+      if (dubBtn && !dubBtn.disabled) {
+        const n = selectedOutputPaths.size || currentFinishedOutputs.length;
+        dubBtn.textContent = `🚀 THUYẾT MINH 1 GIỌNG & GHÉP ${n} PHẦN ĐÃ CHỌN THÀNH 1 VIDEO FULL`;
+      }
     }
 
     function selectExportedParts(all) {
@@ -3417,15 +3550,21 @@
         if (!seenOutputPaths.has(f.path)) selectedOutputPaths.add(f.path);
         seenOutputPaths.add(f.path);
       });
-      document.getElementById("finishedBox").style.display = outputs.length ? "block" : "none";
+      document.getElementById("finishedBox").style.display = "block";
       const list = document.getElementById("finishedList");
       list.replaceChildren();
-      outputs.forEach((f) => {
+      outputs.forEach((f, idx) => {
+        const srtFile = f.srt || f.srt_path || null;
+        const mp3File = f.mp3 || f.audio_vi || null;
+        const dubbedFile = f.dubbed_video || null;
+        const epNum = f.chunk_index || idx + 1;
+        const epBadge = f.episode_label || `Tập ${String(epNum).padStart(2, "0")}`;
+
         const card = document.createElement("div");
         card.className = "chunk-card selected";
         card.style.cssText = "cursor:default; display:block;";
         const title = document.createElement("label");
-        title.style.cssText = "display:flex; gap:10px; align-items:center; font-weight:800; color:#6ee7b7;";
+        title.style.cssText = "display:flex; gap:8px; align-items:center; font-weight:800; color:#6ee7b7; cursor:pointer;";
         const check = document.createElement("input");
         check.type = "checkbox";
         check.checked = selectedOutputPaths.has(f.path);
@@ -3433,14 +3572,19 @@
           if (check.checked) selectedOutputPaths.add(f.path); else selectedOutputPaths.delete(f.path);
           updateExportedSelectionLabel();
         };
-        title.append(check, document.createTextNode(f.name));
+        const badgeSpan = document.createElement("span");
+        badgeSpan.style.cssText = "background:#4f46e5; color:#fff; font-size:11px; padding:2px 7px; border-radius:6px; white-space:nowrap;";
+        badgeSpan.textContent = epBadge;
+        title.append(check, badgeSpan, document.createTextNode(f.name));
         card.append(title);
+
         const info = document.createElement("div");
         info.className = "chunk-card-sub";
         info.style.margin = "8px 0";
-        const progress = f.status === "error" ? "❌ Cần thử lại" : f.status === "stopped" ? "⏹ Đã dừng" : f.status === "running" ? "⏳ Đang làm" : "✅ Đã xong";
-        info.textContent = `${f.duration_human || ""} · ${f.size_label || ""} · ${progress} | Video ✓ · SRT ${f.srt_path ? "✓" : "—"} · MP3 ${f.audio_vi ? "✓" : "—"}`;
+        const progress = f.status === "error" ? "❌ Cần thử lại" : f.status === "stopped" ? "⏹ Đã dừng" : f.status === "running" ? "⏳ Đang làm" : "✅ Sẵn sàng";
+        info.textContent = `${f.duration_human || ""} · ${f.size_label || ""} · ${progress} | Video ✓ · SRT ${srtFile ? "✓" : "—"} · MP3 ${mp3File ? "✓" : "—"} · Đã ghép ${dubbedFile ? "✓" : "—"}`;
         card.append(info);
+
         if (f.error) {
           const error = document.createElement("div"); error.style.color = "#fca5a5"; error.textContent = f.error; card.append(error);
         }
@@ -3448,32 +3592,43 @@
         folder.className = "chunk-card-sub";
         folder.textContent = f.folder || f.path;
         card.append(folder);
+
         const actions = document.createElement("div");
-        actions.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;";
+        actions.style.cssText = "display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;";
         const preview = document.createElement("button");
-        preview.className = "btn btn-primary"; preview.textContent = "▶️ Video";
+        preview.className = "btn btn-primary"; preview.textContent = "▶️ Xem & Sửa SRT";
         preview.onclick = () => previewSpecificVideo(f.path); actions.append(preview);
-        [["📝 SRT", f.srt_path], ["🔊 MP3", f.audio_vi]].forEach(([label, path]) => {
+
+        if (dubbedFile) {
+          const previewDub = document.createElement("button");
+          previewDub.className = "btn btn-purple"; previewDub.textContent = "🎬 Xem Bản Đã Thuyết Minh";
+          previewDub.onclick = () => previewSpecificVideo(dubbedFile); actions.append(previewDub);
+        }
+
+        [["📝 SRT", srtFile], ["🔊 MP3", mp3File]].forEach(([label, path]) => {
           if (!path) return;
           const link = document.createElement("a"); link.className = "btn btn-outline"; link.textContent = label;
           link.href = `/api/video-stream?path=${encodeURIComponent(path)}`;
           link.download = path.split(/[\\/]/).pop(); actions.append(link);
         });
         const open = document.createElement("button"); open.className = "btn btn-success";
-        open.textContent = "📂 Mở thư mục phần"; open.onclick = () => openOutputFolder(f.folder || ""); actions.append(open);
+        open.textContent = "📂 Mở folder phần"; open.onclick = () => openOutputFolder(f.folder || ""); actions.append(open);
         card.append(actions); list.append(card);
       });
       updateExportedSelectionLabel();
     }
 
     async function runBatchAssets(mode) {
-      if (!selectedOutputPaths.size) { alert("Hãy tích chọn ít nhất một video đã xuất."); return; }
+      if (!selectedOutputPaths.size) { alert("Hãy tích chọn ít nhất một phần video."); return; }
       document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = true; });
       try {
         await saveSettingsToServer();
+        const voice = document.getElementById("batchSingleVoiceSelect")?.value || document.getElementById("ttsVoiceSelect")?.value || "vi-VN-NamMinhNeural";
+        const ttsSpeed = parseFloat(document.getElementById("batchTtsSpeedInput")?.value || "1.30") || 1.3;
+        const forceRegen = !!document.getElementById("batchForceRegenMp3Check")?.checked;
         const res = await fetch("/api/workflow/batch", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ paths: [...selectedOutputPaths], mode }),
+          body: JSON.stringify({ paths: [...selectedOutputPaths], mode, voice, tts_speed: ttsSpeed, force_regen_mp3: forceRegen }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.message || "Chưa thể chạy các phần đã chọn.");
@@ -3482,6 +3637,52 @@
         await pollStatus();
       } catch (error) {
         alert(error.message);
+        document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = false; });
+      }
+    }
+
+    async function runDubAndMergeParts() {
+      const targetPaths = selectedOutputPaths.size > 0
+        ? [...selectedOutputPaths]
+        : currentFinishedOutputs.map((f) => f.path);
+      if (!targetPaths.length) {
+        alert("Chưa có phần nào trong danh sách! Hãy chọn thư mục phim hoặc các folder con (Phan_01..Phan_34) trước.");
+        return;
+      }
+      const voice = document.getElementById("batchSingleVoiceSelect")?.value || "vi-VN-NamMinhNeural";
+      const ttsSpeed = parseFloat(document.getElementById("batchTtsSpeedInput")?.value || "1.30") || 1.3;
+      const origVolPct = parseFloat(document.getElementById("batchOrigVolPctInput")?.value || "12");
+      const origVol = Math.min(1.0, Math.max(0.0, (isNaN(origVolPct) ? 12 : origVolPct) / 100.0));
+      const fastMux = (document.getElementById("batchFastMuxSelect")?.value || "fast") === "fast";
+      const mergeIntoOne = document.getElementById("batchMergeFullCheck")?.checked !== false;
+      const forceRegenMp3 = !!document.getElementById("batchForceRegenMp3Check")?.checked;
+
+      document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = true; });
+      try {
+        await saveSettingsToServer();
+        const res = await fetch("/api/workflow/dub-and-merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paths: targetPaths,
+            voice,
+            tts_speed: ttsSpeed,
+            tts_pitch: parseInt(document.getElementById("ttsPitchInput")?.value || "0", 10) || 0,
+            tts_uniform: true,
+            original_vol: origVol,
+            tts_vol: 1.0,
+            fast_mux: fastMux,
+            merge_into_one: mergeIntoOne,
+            force_regen_mp3: forceRegenMp3,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || "Không thể bắt đầu thuyết minh & ghép.");
+        document.getElementById("statusPhaseText").textContent = `🎙️ Đang thuyết minh 1 giọng (${voice}) & ghép ${data.count} phần...`;
+        document.getElementById("stopBtn").style.display = "inline-flex";
+        await pollStatus();
+      } catch (err) {
+        alert(err.message);
         document.querySelectorAll("[data-workflow-action]").forEach((b) => { b.disabled = false; });
       }
     }
