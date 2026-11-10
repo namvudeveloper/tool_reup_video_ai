@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import hashlib
 import json
 import os
 import platform
@@ -29,6 +30,16 @@ import wave
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from core.glossary_translator import (
+    apply_post_replace,
+    glossary_signature,
+    group_broken_cues,
+    join_cues_text,
+    load_glossary,
+    mask_batch_texts,
+    split_translation_for_cues,
+    translate_units_resilient,
+)
 from core.part_workflow import check_stop
 
 # Tự động nạp thư viện từ môi trường ảo .venv (hỗ trợ cả macOS & Windows)
@@ -138,12 +149,27 @@ def _detect_whisper_config(device_pref: str = "auto", model_pref: str = "auto") 
         device = "cuda" if has_cuda else "cpu"
 
     if device == "cuda":
+        vram_gb = 0.0
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        except Exception:
+            vram_gb = 0.0
+
+        low_vram = 0.0 < vram_gb < 5.5
+        preferred_types = (
+            ("int8_float16", "int8", "float16", "int8_float32", "float32")
+            if low_vram
+            else ("float16", "int8_float16", "int8_float32", "int8", "float32")
+        )
         compute_type = "int8"
-        for candidate in ("float16", "int8_float16", "int8_float32", "int8", "float32"):
+        for candidate in preferred_types:
             if candidate in supported_cuda_types:
                 compute_type = candidate
                 break
-        default_model = "large-v3"
+        default_model = "medium" if low_vram else "large-v3"
     else:
         compute_type = "int8"
         default_model = "medium"
@@ -349,25 +375,52 @@ def _google_gtx_translate(text: str, source: str = "zh-CN", target: str = "vi") 
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
+    with urllib.request.urlopen(req, timeout=25) as resp:
         data = json.loads(resp.read().decode("utf-8", errors="replace"))
     if not data or not data[0]:
         return ""
     return "".join(seg[0] for seg in data[0] if seg and seg[0])
 
 
+def _load_translation_cache(cache_path: Path, cache_key: str, expected_len: int) -> List[Optional[str]]:
+    if not cache_path.is_file():
+        return [None] * expected_len
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        if data.get("key") == cache_key and isinstance(data.get("groups"), list) and len(data["groups"]) == expected_len:
+            return [str(x) if isinstance(x, str) else None for x in data["groups"]]
+    except Exception:
+        pass
+    return [None] * expected_len
+
+
+def _save_translation_cache(cache_path: Path, cache_key: str, group_results: List[Optional[str]]) -> None:
+    try:
+        tmp = cache_path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"key": cache_key, "groups": group_results}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        tmp.replace(cache_path)
+    except Exception:
+        pass
+
+
 def translate_srt(
     input_srt_zh: str,
     output_srt_vi: str,
     batch_size: int = 20,
-    sleep_sec: float = 0.15,
+    sleep_sec: float = 0.2,
     progress_callback: Optional[Callable[[int, int], None]] = None,
     stop_checker: Optional[Callable[[], bool]] = None,
+    glossary_path: Optional[str] = None,
+    merge_sentences: bool = True,
 ) -> str:
     """
-    Bước 3: Đọc file .srt tiếng Trung bằng thư viện `srt`, dịch nội dung từ 'zh-CN'
-    sang 'vi', giữ nguyên 100% mốc thời gian (Index, Start, End).
-    Ưu tiên cổng GTX JSON ổn định, tự động dịch từng câu nếu gộp cụm bị lệch dòng.
+    Bước 3: Đọc file .srt tiếng Trung bằng thư viện `srt`, gộp mảnh câu bị cắt dở,
+    áp dụng Pre/Post Glossary (từ custom_glossary.json), dịch sang 'vi' qua Google GTX,
+    và tách lại khớp chuẩn 100% mốc thời gian (Index, Start, End).
+    Có lưu cache tạm để resume an toàn với video dài (8+ tiếng).
     """
     _require_srt()
     try:
@@ -383,65 +436,102 @@ def translate_srt(
     subtitles = list(srt.parse(raw_text))
     total = len(subtitles)
 
-    print(f"\n[BƯỚC 3/4] 🌐 Đang dịch {total} câu phụ đề từ Tiếng Trung (zh-CN) sang Tiếng Việt (vi)...")
+    glossary = load_glossary(Path(glossary_path) if glossary_path else None)
+    rules = glossary.get("rules", [])
+    groups = group_broken_cues(subtitles) if merge_sentences else [[sub] for sub in subtitles]
+
+    print(
+        f"\n[BƯỚC 3/4] 🌐 Đang dịch {total} câu phụ đề ({len(groups)} cụm mạch câu | {len(rules)} quy tắc glossary)..."
+    )
     if total == 0:
         out_srt.write_text("", encoding="utf-8")
         return str(out_srt)
 
     translator = GoogleTranslator(source="zh-CN", target="vi") if GoogleTranslator else None
-    translated_subs: List[srt.Subtitle] = []
 
     def _translate_text(q: str) -> str:
-        for attempt in range(3):
-            check_stop(stop_checker)
-            try:
-                return _google_gtx_translate(q, source="zh-CN", target="vi")
-            except Exception:
-                if translator is not None:
-                    try:
-                        return translator.translate(q) or ""
-                    except Exception:
-                        pass
-                time.sleep(0.4 * (attempt + 1))
-        raise RuntimeError(
-            "Dịch vụ Google đang giới hạn hoặc từ chối yêu cầu dịch. "
-            "Phụ đề tiếng Trung đã được lưu; hãy thử lại sau hoặc dùng bảng sửa phụ đề thủ công."
+        check_stop(stop_checker)
+        try:
+            return _google_gtx_translate(q, source="zh-CN", target="vi")
+        except Exception:
+            if translator is not None:
+                return translator.translate(q) or ""
+            raise
+
+    cache_key = hashlib.sha256(
+        f"{raw_text}|{glossary_signature(rules)}|{int(merge_sentences)}".encode("utf-8")
+    ).hexdigest()[:16]
+    cache_path = out_srt.with_name(out_srt.name + ".translate_cache.json")
+    group_results = _load_translation_cache(cache_path, cache_key, len(groups))
+
+    pending_indices = [idx for idx, val in enumerate(group_results) if val is None]
+    done_cues = sum(len(groups[idx]) for idx, val in enumerate(group_results) if val is not None)
+    if done_cues > 0:
+        print(f"  ♻️ Tiếp tục từ cache đã dịch trước đó: {done_cues}/{total} câu.")
+        if progress_callback:
+            progress_callback(done_cues, total)
+
+    if pending_indices:
+        pending_zh = [join_cues_text(groups[idx]) for idx in pending_indices]
+        masked_units, token_map = mask_batch_texts(pending_zh, rules)
+
+        def _on_batch_done(start_pos: int, end_pos: int, batch_out: List[str]) -> None:
+            nonlocal done_cues
+            for offset, raw_vi in enumerate(batch_out):
+                global_group_idx = pending_indices[start_pos + offset]
+                clean_vi = apply_post_replace(raw_vi, token_map, rules)
+                group_results[global_group_idx] = clean_vi
+                done_cues += len(groups[global_group_idx])
+            _save_translation_cache(cache_path, cache_key, group_results)
+            if progress_callback:
+                progress_callback(min(done_cues, total), total)
+
+        translate_units_resilient(
+            masked_units,
+            translate_fn=_translate_text,
+            batch_size=batch_size,
+            max_chars=2200,
+            sleep_sec=sleep_sec,
+            stop_checker=stop_checker,
+            on_batch_done=_on_batch_done,
         )
 
-    # Xử lý theo từng cụm (batch) để tăng tốc độ và giảm số lần gọi API
-    for start_idx in range(0, total, batch_size):
+    translated_subs: List[srt.Subtitle] = []
+    for group, group_vi in zip(groups, group_results):
         check_stop(stop_checker)
-        batch = subtitles[start_idx : start_idx + batch_size]
-        batch_texts = [sub.content.replace("\n", " ").strip() for sub in batch]
+        pieces = split_translation_for_cues(group_vi or "", group)
+        if pieces is None:
+            # Nếu cả cụm dịch quá ngắn khiến ít từ hơn số cue -> dịch từng cue trong cụm để không bỏ trống mốc thời gian
+            single_zh = [(sub.content or "").replace("\n", " ").strip() for sub in group]
+            masked_singles, single_tokens = mask_batch_texts(single_zh, rules)
+            raw_singles = translate_units_resilient(
+                masked_singles,
+                translate_fn=_translate_text,
+                batch_size=len(masked_singles),
+                sleep_sec=0.05,
+                stop_checker=stop_checker,
+            )
+            pieces = [
+                apply_post_replace(raw_s, single_tokens, rules) or orig
+                for raw_s, orig in zip(raw_singles, single_zh)
+            ]
 
-        joined_result = _translate_text("\n".join(batch_texts))
-        time.sleep(sleep_sec)
-        translated_batch = [line.strip() for line in (joined_result or "").splitlines() if line.strip()]
-
-        # Nếu Google gộp dòng khiến số dòng trả về khác số câu trong batch -> dịch từng câu một để khớp 100% timeline
-        if len(translated_batch) != len(batch):
-            translated_batch = []
-            for single_txt in batch_texts:
-                vi_one = _translate_text(single_txt).replace("\n", " ").strip()
-                translated_batch.append(vi_one or single_txt)
-                time.sleep(0.05)
-
-        for sub, vi_text in zip(batch, translated_batch):
+        for sub, vi_text in zip(group, pieces):
+            final_text = (vi_text or "").strip() or (sub.content or "").strip()
             new_sub = srt.Subtitle(
                 index=sub.index,
                 start=sub.start,
                 end=sub.end,
-                content=vi_text,
+                content=final_text,
             )
             translated_subs.append(new_sub)
             print(
                 f"    [{new_sub.index:03d}/{total:03d}] "
-                f"{srt.timedelta_to_srt_timestamp(new_sub.start)} | {vi_text}"
+                f"{srt.timedelta_to_srt_timestamp(new_sub.start)} | {final_text}"
             )
-        if progress_callback:
-            progress_callback(len(translated_subs), total)
 
     out_srt.write_text(srt.compose(translated_subs), encoding="utf-8")
+    cache_path.unlink(missing_ok=True)
     print(f"  ✅ Đã lưu file phụ đề tiếng Việt hoàn chỉnh: {out_srt.name}")
     return str(out_srt)
 

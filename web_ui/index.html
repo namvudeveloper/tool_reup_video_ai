@@ -1050,7 +1050,7 @@
           </div>
           <div style="font-size: 12px; color: var(--muted); line-height: 1.7;">
             Xong video, SRT và MP3 của phần 1 mới chuyển sang phần 2. Mỗi phần nằm trong <b>output/Tên_phim/Phan_01/</b>.
-            Nhận diện trên máy; dịch qua Google; giọng đọc qua Microsoft Edge TTS. Có thể chọn lại các phần bên dưới để làm tiếp bước còn thiếu.
+            Nhận diện trên máy; dịch Google tự nối mạch câu + áp dụng từ điển <b>custom_glossary.json</b>; giọng đọc qua Microsoft Edge TTS. Có thể chọn lại các phần bên dưới để làm tiếp bước còn thiếu.
           </div>
         </div>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
@@ -1217,6 +1217,87 @@
           <option value="medium">Chính xác hơn · Medium (tải lâu)</option>
         </select>
       </div>
+
+      <!-- TỪ ĐIỂN TÊN RIÊNG & THUẬT NGỮ TỰ ĐỘNG (CÁCH 1 CHO VIDEO DÀI 8 TIẾNG) -->
+      <details id="glossaryPanel" style="margin-bottom: 14px; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; border-radius: 12px; padding: 12px 14px;">
+        <summary style="cursor: pointer; font-weight: 800; font-size: 13.5px; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <span>📚 Từ Điển Tên Riêng &amp; Thuật Ngữ Tự Động (custom_glossary.json — Chống dịch sai tên cho video 8 tiếng)</span>
+          <span id="glossaryCountBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 999px; background: rgba(56, 189, 248, 0.15); color: #7dd3fc;">0 quy tắc</span>
+        </summary>
+        <div style="margin-top: 12px; border-top: 1px solid #1e293b; padding-top: 12px;">
+          <div style="font-size: 12.5px; color: var(--muted); margin-bottom: 10px; line-height: 1.6;">
+            <b>Quy trình cho video 8 tiếng:</b> Quét mẫu tiếng Trung <b>1 lần duy nhất</b> bằng Gemini (API hoặc copy dán sang Gemini Web 0đ) để lưu vào <code>custom_glossary.json</code>.
+            Khi chạy Google Dịch ở tất cả các phần sau đó, tool tự động <b>nối mạch câu</b> + <b>Pre-replace tên riêng</b> trước khi dịch + <b>Post-replace</b> chuẩn hóa văn phong.
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+            <input
+              type="password"
+              id="geminiKeyInput"
+              placeholder="Gemini API Key (chỉ lưu trên trình duyệt để quét 1 lần)"
+              style="padding: 7px 10px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 12.5px; width: 290px;"
+              onchange="localStorage.setItem('gemini_glossary_api_key', this.value)"
+            />
+            <select id="geminiGlossaryModel" style="padding: 7px 10px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 12.5px;">
+              <option value="gemini-2.5-flash" selected>gemini-2.5-flash (Khuyên dùng · Rẻ/Nhanh)</option>
+              <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+              <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            </select>
+            <button class="btn btn-purple" style="padding: 7px 12px; font-size: 12.5px;" onclick="extractGlossaryGemini()">
+              🤖 Quét 1 Lần Bằng Gemini API
+            </button>
+            <button class="btn btn-outline" style="padding: 7px 12px; font-size: 12.5px;" onclick="copyGeminiGlossaryPrompt()">
+              📋 Copy Prompt (Dùng Gemini Web 0đ)
+            </button>
+            <button class="btn btn-outline" style="padding: 7px 12px; font-size: 12.5px;" onclick="seedStarterGlossary()">
+              ✨ Nạp Mẫu Tu Tiên / Cổ Trang
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+            <textarea
+              id="glossaryJsonPasteInput"
+              rows="2"
+              placeholder='Dán JSON từ Gemini Web vào đây (VD: {"rules": [{"zh": "韩立", "vi": "Hàn Lập"}]}) rồi bấm Nhập JSON'
+              style="flex: 1; min-width: 280px; padding: 7px 10px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 12.5px; font-family: monospace;"
+            ></textarea>
+            <button class="btn btn-primary" style="padding: 7px 12px; font-size: 12.5px;" onclick="importGlossaryJsonFromBox(true)">
+              📥 Gộp JSON Vào Từ Điển
+            </button>
+            <button class="btn btn-warning" style="padding: 7px 12px; font-size: 12.5px;" onclick="applyGlossaryToCurrentRows()">
+              ⚡ Áp Dụng Lên Bảng Sub Đang Mở
+            </button>
+          </div>
+
+          <div id="glossaryStatusMsg" style="font-size: 12.5px; color: #a7f3d0; margin-bottom: 8px;"></div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px;">
+            <select id="newRuleStageSelect" style="padding: 6px 8px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 12px;">
+              <option value="both">Trung ➔ Việt (Pre+Post)</option>
+              <option value="post">Sửa sau dịch (Việt ➔ Việt)</option>
+            </select>
+            <input id="newRuleSrcInput" type="text" placeholder="Từ gốc (VD: 韩立 hoặc Hàn Đứng)" style="padding: 6px 9px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 12.5px; width: 220px;" />
+            <span>➔</span>
+            <input id="newRuleDstInput" type="text" placeholder="Từ chuẩn (VD: Hàn Lập)" style="padding: 6px 9px; border-radius: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; font-size: 12.5px; width: 200px;" />
+            <button class="btn btn-outline" style="padding: 6px 12px; font-size: 12px;" onclick="addGlossaryRuleRow()">➕ Thêm Quy Tắc</button>
+            <button class="btn btn-success" style="padding: 6px 12px; font-size: 12px;" onclick="saveGlossaryToServer()">💾 Lưu Từ Điển</button>
+          </div>
+
+          <div style="max-height: 210px; overflow-y: auto; border: 1px solid #1e293b; border-radius: 8px;">
+            <table class="srt-table" style="font-size: 12.5px;">
+              <thead>
+                <tr>
+                  <th style="width: 130px;">Chế độ</th>
+                  <th>Từ gốc (Trung / Việt sai)</th>
+                  <th>Thay bằng (Việt chuẩn)</th>
+                  <th style="width: 60px; text-align: center;">Xóa</th>
+                </tr>
+              </thead>
+              <tbody id="glossaryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
 
       <!-- Thanh công cụ Phụ đề -->
       <div class="srt-toolbar">
@@ -1862,6 +1943,10 @@
         selectedChunkSet = new Set(data.selected_chunks || []);
         srtRowsData = data.srt_rows || [];
         renderSrtTable();
+        loadGlossaryFromServer();
+        const savedKey = localStorage.getItem("gemini_glossary_api_key") || "";
+        const keyInput = document.getElementById("geminiKeyInput");
+        if (keyInput && savedKey) keyInput.value = savedKey;
         renderPlan(data.plan);
         renderSrtTarget(data);
         if (data.srt_status_msg) document.getElementById("srtStatusLabel").textContent = data.srt_status_msg;
@@ -2296,6 +2381,217 @@
       renderSrtTable();
       document.getElementById("srtStatusLabel").textContent =
         `⚡ Đã thay thế "${findStr}" ➔ "${repStr}" trong ${count} câu phụ đề! Nhớ bấm Lưu nhé.`;
+    }
+
+    let glossaryRulesData = [];
+
+    function escapeGlossaryHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderGlossaryTable() {
+      const badge = document.getElementById("glossaryCountBadge");
+      if (badge) {
+        badge.textContent = `${glossaryRulesData.length} quy tắc`;
+      }
+      const tbody = document.getElementById("glossaryTableBody");
+      if (!tbody) return;
+      if (glossaryRulesData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:12px;">Chưa có quy tắc nào. Hãy bấm Quét 1 Lần Bằng Gemini hoặc Nạp Mẫu Tu Tiên!</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = glossaryRulesData
+        .map((r, idx) => {
+          const isPost = r.stage === "post";
+          const src = isPost ? (r.find || "") : (r.zh || "");
+          const dst = isPost ? (r.replace || "") : (r.vi || "");
+          const modeLabel = isPost ? "Sau dịch (Việt→Việt)" : "Pre+Post (Trung→Việt)";
+          return `<tr>
+            <td style="color:#94a3b8;">${modeLabel}</td>
+            <td><input type="text" class="srt-vi-input" style="padding:4px 8px;" value="${escapeGlossaryHtml(src)}" onchange="updateGlossaryCell(${idx}, '${isPost ? "find" : "zh"}', this.value)" /></td>
+            <td><input type="text" class="srt-vi-input" style="padding:4px 8px;" value="${escapeGlossaryHtml(dst)}" onchange="updateGlossaryCell(${idx}, '${isPost ? "replace" : "vi"}', this.value)" /></td>
+            <td style="text-align:center;"><button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteGlossaryRuleRow(${idx})">✖</button></td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    function updateGlossaryCell(idx, field, value) {
+      if (glossaryRulesData[idx]) {
+        glossaryRulesData[idx][field] = value;
+      }
+    }
+
+    function addGlossaryRuleRow() {
+      const stage = document.getElementById("newRuleStageSelect").value;
+      const src = document.getElementById("newRuleSrcInput").value.trim();
+      const dst = document.getElementById("newRuleDstInput").value.trim();
+      if (!src || !dst) {
+        alert("Hãy nhập cả Từ gốc và Từ chuẩn!");
+        return;
+      }
+      if (stage === "post") {
+        glossaryRulesData.unshift({ find: src, replace: dst, stage: "post", type: "term" });
+      } else {
+        glossaryRulesData.unshift({ zh: src, vi: dst, stage: "both", type: "name" });
+      }
+      document.getElementById("newRuleSrcInput").value = "";
+      document.getElementById("newRuleDstInput").value = "";
+      renderGlossaryTable();
+      saveGlossaryToServer();
+    }
+
+    function deleteGlossaryRuleRow(idx) {
+      glossaryRulesData.splice(idx, 1);
+      renderGlossaryTable();
+      saveGlossaryToServer();
+    }
+
+    async function loadGlossaryFromServer() {
+      try {
+        const res = await fetch("/api/glossary");
+        const data = await res.json();
+        if (data.ok) {
+          glossaryRulesData = data.rules || [];
+          renderGlossaryTable();
+        }
+      } catch (e) {
+        console.warn("loadGlossaryFromServer error:", e);
+      }
+    }
+
+    async function saveGlossaryToServer() {
+      const msgEl = document.getElementById("glossaryStatusMsg");
+      try {
+        const res = await fetch("/api/glossary/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rules: glossaryRulesData }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          glossaryRulesData = data.rules || [];
+          renderGlossaryTable();
+          if (msgEl) msgEl.textContent = data.message || "✅ Đã lưu từ điển.";
+        } else if (msgEl) {
+          msgEl.textContent = "⚠️ " + (data.message || "Lỗi lưu từ điển");
+        }
+      } catch (e) {
+        if (msgEl) msgEl.textContent = "❌ Lỗi kết nối khi lưu từ điển: " + e.message;
+      }
+    }
+
+    async function seedStarterGlossary() {
+      const msgEl = document.getElementById("glossaryStatusMsg");
+      const res = await fetch("/api/glossary/starter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (data.ok) {
+        glossaryRulesData = data.rules || [];
+        renderGlossaryTable();
+        if (msgEl) msgEl.textContent = data.message;
+      }
+    }
+
+    async function copyGeminiGlossaryPrompt() {
+      const msgEl = document.getElementById("glossaryStatusMsg");
+      const res = await fetch("/api/glossary/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message || "Chưa có phụ đề tiếng Trung để tạo prompt.");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(data.prompt);
+        if (msgEl) {
+          msgEl.textContent = `📋 Đã copy prompt lấy mẫu từ ${data.file_count} file .zh.srt (${data.sample_chars} ký tự)! Hãy dán vào Gemini Web rồi copy JSON trả về vào ô bên trên.`;
+        }
+      } catch (_) {
+        document.getElementById("glossaryJsonPasteInput").value = data.prompt;
+        if (msgEl) {
+          msgEl.textContent = "📋 Trình duyệt chặn tự động copy — prompt đã được đặt vào ô text để bạn Ctrl+C!";
+        }
+      }
+    }
+
+    async function extractGlossaryGemini() {
+      const msgEl = document.getElementById("glossaryStatusMsg");
+      const apiKey = (document.getElementById("geminiKeyInput").value || "").trim();
+      const model = document.getElementById("geminiGlossaryModel").value;
+      if (!apiKey) {
+        alert("Hãy nhập Gemini API Key trước (hoặc bấm 'Copy Prompt' để dùng Gemini Web miễn phí 0đ).");
+        return;
+      }
+      localStorage.setItem("gemini_glossary_api_key", apiKey);
+      if (msgEl) msgEl.textContent = `⏳ Đang gọi ${model} đúng 1 lần để trích xuất tên riêng & thuật ngữ...`;
+      try {
+        const res = await fetch("/api/glossary/extract-gemini", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: apiKey, model }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          if (msgEl) msgEl.textContent = "⚠️ " + (data.message || "Không quét được glossary.");
+          alert(data.message || "Không quét được glossary.");
+          return;
+        }
+        glossaryRulesData = data.rules || [];
+        renderGlossaryTable();
+        if (msgEl) msgEl.textContent = data.message;
+      } catch (e) {
+        if (msgEl) msgEl.textContent = "❌ Lỗi kết nối khi quét Gemini: " + e.message;
+      }
+    }
+
+    async function importGlossaryJsonFromBox(mergeMode) {
+      const msgEl = document.getElementById("glossaryStatusMsg");
+      const rawJson = (document.getElementById("glossaryJsonPasteInput").value || "").trim();
+      if (!rawJson) {
+        alert("Hãy dán đoạn JSON từ Gemini vào ô trước!");
+        return;
+      }
+      const res = await fetch("/api/glossary/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_json: rawJson, merge: !!mergeMode }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message || "JSON không hợp lệ.");
+        return;
+      }
+      glossaryRulesData = data.rules || [];
+      document.getElementById("glossaryJsonPasteInput").value = "";
+      renderGlossaryTable();
+      if (msgEl) msgEl.textContent = data.message;
+    }
+
+    async function applyGlossaryToCurrentRows() {
+      const msgEl = document.getElementById("glossaryStatusMsg");
+      const res = await fetch("/api/glossary/apply-to-rows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ srt_rows: srtRowsData }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        srtRowsData = data.srt_rows || srtRowsData;
+        renderSrtTable();
+        if (msgEl) msgEl.textContent = data.message;
+        document.getElementById("srtStatusLabel").textContent = data.message;
+      }
     }
 
     function parseClientSrtIntoTable(rawText, filename) {

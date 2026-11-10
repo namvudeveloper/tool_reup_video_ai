@@ -41,6 +41,19 @@ from core.processor import (
 )
 from core.system_check import check_disk_space, find_ffmpeg_binaries, get_os_name, select_video_encoder
 from core.part_workflow import WorkflowStopped, part_folder, process_part, safe_name
+from core.glossary_translator import (
+    XIANXIA_STARTER_RULES,
+    apply_glossary_to_rows,
+    build_gemini_glossary_prompt,
+    build_glossary_sample_text,
+    collect_zh_srt_paths,
+    extract_glossary_with_gemini,
+    extract_json_from_text,
+    load_glossary,
+    merge_glossary_rules,
+    normalize_glossary_payload,
+    save_glossary,
+)
 
 if sys.platform == "win32":
     try:
@@ -57,6 +70,7 @@ PROCESSED_DIR = PROJECT_ROOT / "temp_processed"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 SRT_WORK_DIR = PROJECT_ROOT / "output" / "subtitles"
 CONFIG_PATH = PROJECT_ROOT / "config.json"
+GLOSSARY_PATH = PROJECT_ROOT / "custom_glossary.json"
 
 
 # ==============================================================================
@@ -263,6 +277,40 @@ def _get_srt_target() -> str:
         )
         candidates.extend(str(p.resolve()) for p in recent_mp4s)
     return next((str(path) for path in candidates if path and Path(path).is_file()), "")
+
+
+def _collect_current_zh_sample_text(max_chars: int = 12000) -> Tuple[str, int]:
+    """Lấy mẫu lời thoại tiếng Trung rải đều từ các file .zh.srt hiện có (hoặc bảng đang mở)."""
+    zh_files = collect_zh_srt_paths(OUTPUT_DIR, _get_srt_target())
+    if STATE.active_srt_path:
+        active_p = Path(STATE.active_srt_path)
+        for cand in (
+            active_p.with_suffix("").with_suffix(".zh.srt"),
+            active_p.parent / ".work" / f"{active_p.stem.removesuffix('.vi')}.zh.srt",
+        ):
+            if cand.is_file() and cand.resolve() not in zh_files:
+                zh_files.insert(0, cand.resolve())
+
+    sample_text = build_glossary_sample_text(zh_files, max_chars=max_chars)
+    if sample_text:
+        return sample_text, len(zh_files)
+
+    # Fallback: lấy trực tiếp cột zh_text từ bảng phụ đề đang mở
+    with STATE.lock:
+        rows = list(STATE.srt_rows)
+    seen = set()
+    lines: List[str] = []
+    used = 0
+    for row in rows:
+        zh_txt = str(row.get("zh_text", "") or "").strip()
+        if not zh_txt or zh_txt in seen:
+            continue
+        seen.add(zh_txt)
+        if used + len(zh_txt) + 1 > max_chars and lines:
+            break
+        lines.append(zh_txt)
+        used += len(zh_txt) + 1
+    return "\n".join(lines), (1 if lines else 0)
 
 
 def _list_available_preview_videos() -> List[Dict[str, str]]:
@@ -1201,7 +1249,21 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             sys_data["active_video_for_srt"] = _get_srt_target()
             sys_data["available_videos"] = _list_available_preview_videos()
             sys_data["available_audios"] = _list_available_tts_audios()
+            sys_data["glossary_count"] = len(load_glossary(GLOSSARY_PATH).get("rules", []))
             self._send_json(sys_data)
+            return
+
+        if path == "/api/glossary":
+            glossary = load_glossary(GLOSSARY_PATH)
+            zh_files = collect_zh_srt_paths(OUTPUT_DIR, _get_srt_target())
+            self._send_json(
+                {
+                    "ok": True,
+                    "rules": glossary.get("rules", []),
+                    "glossary_path": str(GLOSSARY_PATH),
+                    "zh_srt_count": len(zh_files),
+                }
+            )
             return
 
         if path == "/api/status":
@@ -1557,8 +1619,13 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
             if chosen_srt and Path(chosen_srt).is_file():
                 raw_text = Path(chosen_srt).read_text(encoding="utf-8-sig", errors="replace")
                 cues = parse_srt_text(raw_text)
-                # Kiểm tra nếu có file .zh.srt cùng tên để nạp song ngữ đối chiếu
-                zh_candidate = Path(chosen_srt).with_suffix("").with_suffix(".zh.srt")
+                # Kiểm tra nếu có file .zh.srt cùng tên (hoặc trong .work/) để nạp song ngữ đối chiếu
+                chosen_p = Path(chosen_srt)
+                zh_candidates = [
+                    chosen_p.with_suffix("").with_suffix(".zh.srt"),
+                    chosen_p.parent / ".work" / f"{chosen_p.stem.removesuffix('.vi')}.zh.srt",
+                ]
+                zh_candidate = next((c for c in zh_candidates if c.is_file()), zh_candidates[0])
                 zh_map: Dict[int, str] = {}
                 if zh_candidate.is_file():
                     for zc in parse_srt_text(zh_candidate.read_text(encoding="utf-8-sig", errors="replace")):
@@ -1994,6 +2061,122 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
             self._send_json({"ok": True})
+            return
+
+        if path == "/api/glossary/save":
+            merge_mode = bool(body.get("merge", False))
+            raw_json = body.get("raw_json")
+            if isinstance(raw_json, str) and raw_json.strip():
+                try:
+                    incoming_payload = extract_json_from_text(raw_json)
+                except Exception as exc:
+                    self._send_json({"ok": False, "message": f"JSON glossary không hợp lệ: {exc}"}, status=400)
+                    return
+            else:
+                incoming_payload = body.get("rules", body)
+
+            normalized_incoming = normalize_glossary_payload(incoming_payload)
+            if merge_mode:
+                current = load_glossary(GLOSSARY_PATH)
+                merged, added = merge_glossary_rules(current.get("rules", []), normalized_incoming["rules"])
+                saved = save_glossary({"rules": merged}, GLOSSARY_PATH)
+                msg = f"✅ Đã gộp thêm {added} quy tắc (Tổng: {len(saved['rules'])} quy tắc)."
+            else:
+                saved = save_glossary(normalized_incoming, GLOSSARY_PATH)
+                added = len(saved["rules"])
+                msg = f"✅ Đã lưu {len(saved['rules'])} quy tắc vào custom_glossary.json."
+            self._send_json({"ok": True, "rules": saved["rules"], "added": added, "message": msg})
+            return
+
+        if path == "/api/glossary/starter":
+            current = load_glossary(GLOSSARY_PATH)
+            merged, added = merge_glossary_rules(current.get("rules", []), XIANXIA_STARTER_RULES)
+            saved = save_glossary({"rules": merged}, GLOSSARY_PATH)
+            self._send_json(
+                {
+                    "ok": True,
+                    "rules": saved["rules"],
+                    "added": added,
+                    "message": f"✨ Đã nạp thêm {added} từ điển mẫu Tu Tiên / Cổ Trang (Tổng: {len(saved['rules'])} quy tắc).",
+                }
+            )
+            return
+
+        if path == "/api/glossary/prompt":
+            sample_text, file_count = _collect_current_zh_sample_text(max_chars=12000)
+            if not sample_text:
+                self._send_json(
+                    {
+                        "ok": False,
+                        "message": "Chưa tìm thấy file .zh.srt nào trong output/ hoặc bảng phụ đề. Hãy tách sub ít nhất 1 phần trước.",
+                    },
+                    status=400,
+                )
+                return
+            prompt = build_gemini_glossary_prompt(sample_text)
+            self._send_json(
+                {
+                    "ok": True,
+                    "prompt": prompt,
+                    "sample_chars": len(sample_text),
+                    "file_count": file_count,
+                }
+            )
+            return
+
+        if path == "/api/glossary/extract-gemini":
+            api_key = str(body.get("api_key", "") or "").strip()
+            model = str(body.get("model", "gemini-2.5-flash") or "gemini-2.5-flash").strip()
+            replace_all = bool(body.get("replace_all", False))
+            sample_text, file_count = _collect_current_zh_sample_text(max_chars=12000)
+            if not sample_text:
+                self._send_json(
+                    {
+                        "ok": False,
+                        "message": "Chưa có phụ đề tiếng Trung (.zh.srt) để quét. Hãy tách sub (hoặc chọn Video → SRT) ít nhất 1 phần trước.",
+                    },
+                    status=400,
+                )
+                return
+            try:
+                extracted = extract_glossary_with_gemini(sample_text, api_key=api_key, model=model)
+                current_rules = [] if replace_all else load_glossary(GLOSSARY_PATH).get("rules", [])
+                merged, added = merge_glossary_rules(current_rules, extracted)
+                saved = save_glossary({"rules": merged}, GLOSSARY_PATH)
+                msg = (
+                    f"🤖 Đã quét {file_count} file .zh.srt bằng {model}: "
+                    f"rút ra {len(extracted)} thuật ngữ, thêm mới {added} quy tắc (Tổng: {len(saved['rules'])})."
+                )
+                STATE.add_log(msg)
+                self._send_json(
+                    {
+                        "ok": True,
+                        "rules": saved["rules"],
+                        "extracted": len(extracted),
+                        "added": added,
+                        "file_count": file_count,
+                        "message": msg,
+                    }
+                )
+            except Exception as exc:
+                self._send_json({"ok": False, "message": str(exc)}, status=400)
+            return
+
+        if path == "/api/glossary/apply-to-rows":
+            rows = body.get("srt_rows", STATE.srt_rows)
+            glossary = load_glossary(GLOSSARY_PATH)
+            updated_rows, changed = apply_glossary_to_rows(rows or [], glossary.get("rules", []))
+            with STATE.lock:
+                STATE.srt_rows = updated_rows
+                STATE.srt_status_msg = f"⚡ Đã áp dụng glossary: cập nhật {changed} câu trong bảng."
+            self._send_json(
+                {
+                    "ok": True,
+                    "srt_rows": updated_rows,
+                    "changed": changed,
+                    "message": f"⚡ Đã áp dụng glossary lên bảng: sửa {changed} câu.",
+                }
+            )
             return
 
         if path == "/api/open-output":
